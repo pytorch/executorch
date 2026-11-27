@@ -21,7 +21,10 @@ from executorch.backends.vulkan.op_registry import (
 from executorch.backends.vulkan.partitioner.vulkan_partitioner import VulkanPartitioner
 from executorch.backends.vulkan.patterns.conv2d_with_epilogue import activation_of
 from executorch.backends.vulkan.patterns.swiglu import find_swiglu_pattern
-from executorch.backends.vulkan.serialization.vulkan_graph_schema import VkDataType
+from executorch.backends.vulkan.serialization.vulkan_graph_schema import (
+    VkDataType,
+    VkStorageType,
+)
 from executorch.backends.vulkan.serialization.vulkan_graph_serialize import (
     extract_vk_flatbuffer,
     flatbuffer_to_vk_graph,
@@ -2287,3 +2290,245 @@ class TestVulkanPasses(unittest.TestCase):
         replace_pass._exported_program = ep
         with self.assertRaises(RuntimeError):
             replace_pass.call(ep.graph_module)
+
+
+class TestLLMSDPAPartitionerCheck(unittest.TestCase):
+    """
+    check_llm_sdpa_node keeps llama::custom_sdpa / update_cache configurations
+    that the Vulkan SDPA cannot run on CPU, instead of failing at load time. The
+    causal_sdpa and masked_sdpa patterns must not match them either, since a
+    matched node is delegated without the per-op checks.
+    """
+
+    S, C, H, D = 4, 16, 2, 8
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+    def _placeholder(self, graph, fake_mode, name, shape, dtype):
+        node = graph.placeholder(name)
+        node.meta["val"] = fake_mode.from_tensor(torch.empty(shape, dtype=dtype))
+        return node
+
+    def _build(
+        self,
+        mask_shape=None,
+        mask_dtype=torch.float32,
+        q_dtype=torch.float32,
+        is_causal=False,
+        trim_defaults=False,
+    ):
+        from executorch.backends.vulkan.patterns.sdpa import (
+            check_llm_sdpa_node,
+            find_causal_sdpa_patterns,
+            find_masked_sdpa_patterns,
+            llm_sdpa_mask_needs_texture,
+        )
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        fake_mode = FakeTensorMode()
+        graph = torch.fx.Graph()
+        qkv_shape = (1, self.S, self.H, self.D)
+        cache_shape = (1, self.C, self.H, self.D)
+        q = self._placeholder(graph, fake_mode, "q", qkv_shape, q_dtype)
+        k = self._placeholder(graph, fake_mode, "k", qkv_shape, q_dtype)
+        v = self._placeholder(graph, fake_mode, "v", qkv_shape, q_dtype)
+        k_cache = self._placeholder(graph, fake_mode, "k_cache", cache_shape, q_dtype)
+        v_cache = self._placeholder(graph, fake_mode, "v_cache", cache_shape, q_dtype)
+        mask = None
+        if mask_shape is not None:
+            mask = self._placeholder(graph, fake_mode, "mask", mask_shape, mask_dtype)
+
+        update_cache = graph.call_function(
+            torch.ops.llama.update_cache.default, (k, k_cache, 0)
+        )
+        graph.call_function(torch.ops.llama.update_cache.default, (v, v_cache, 0))
+        args = (q, k_cache, v_cache, 0, mask, 0.0, is_causal)
+        if trim_defaults:
+            # torch.export drops trailing arguments that equal their defaults
+            assert not is_causal
+            args = args[:5]
+        custom_sdpa = graph.call_function(torch.ops.llama.custom_sdpa.default, args)
+        graph.output(custom_sdpa)
+
+        supported = check_llm_sdpa_node(custom_sdpa)
+        self.assertEqual(check_llm_sdpa_node(update_cache), supported)
+        causal_match = find_causal_sdpa_patterns(custom_sdpa)
+        masked_match = find_masked_sdpa_patterns(custom_sdpa)
+        self.assertEqual(causal_match is not None, supported and mask_shape is None)
+        self.assertEqual(masked_match is not None, supported and mask_shape is not None)
+        match = causal_match or masked_match
+        if match is not None:
+            self.assertIs(match.attn_mask_node, mask)
+            self.assertEqual(match.is_causal_node, is_causal)
+        needs_texture = mask is not None and mask_dtype != q_dtype
+        self.assertEqual(llm_sdpa_mask_needs_texture(custom_sdpa), needs_texture)
+        self.assertEqual(llm_sdpa_mask_needs_texture(update_cache), needs_texture)
+        return supported
+
+    def test_causal_without_mask_is_supported(self):
+        self.assertTrue(self._build(is_causal=True))
+
+    def test_non_causal_without_mask_is_rejected(self):
+        self.assertFalse(self._build(is_causal=False))
+
+    def test_mask_is_supported(self):
+        self.assertTrue(self._build(mask_shape=(self.S, self.C)))
+
+    def test_mask_with_trimmed_default_args_is_supported(self):
+        self.assertTrue(self._build(mask_shape=(self.S, self.C), trim_defaults=True))
+
+    def test_mask_with_is_causal_is_rejected(self):
+        self.assertFalse(self._build(mask_shape=(self.S, self.C), is_causal=True))
+
+    def test_fp32_mask_with_fp16_query_needs_texture(self):
+        # The CPU op requires an fp32 mask, also for an fp16 query.
+        self.assertTrue(self._build(mask_shape=(self.S, self.C), q_dtype=torch.float16))
+
+    def test_non_float_mask_is_rejected(self):
+        self.assertFalse(
+            self._build(mask_shape=(self.S, self.C), mask_dtype=torch.bool)
+        )
+
+    def test_mask_shape_mismatch_is_rejected(self):
+        self.assertFalse(self._build(mask_shape=(1, self.S, self.C)))
+        self.assertFalse(self._build(mask_shape=(self.S, self.C - 1)))
+
+    def test_auto_functionalized_sdpa_with_kv_cache(self):
+        from executorch.backends.vulkan.patterns.sdpa import check_llm_sdpa_node
+        from torch._subclasses.fake_tensor import FakeTensorMode
+
+        # The partitioner passes the wrapper node, whose op args are kwargs. v2
+        # passes the caches as bases, so their length is checked at runtime.
+        for wrapper, mask_len in product(
+            (
+                torch.ops.higher_order.auto_functionalized,
+                torch.ops.higher_order.auto_functionalized_v2,
+            ),
+            (self.C, self.C - 1),
+        ):
+            fake_mode = FakeTensorMode()
+            graph = torch.fx.Graph()
+            q_shape = (1, self.S, self.H, self.D)
+            cache_shape = (1, self.C, self.H, self.D)
+            q = self._placeholder(graph, fake_mode, "q", q_shape, torch.float32)
+            k_cache = self._placeholder(
+                graph, fake_mode, "k_cache", cache_shape, torch.float32
+            )
+            v_cache = self._placeholder(
+                graph, fake_mode, "v_cache", cache_shape, torch.float32
+            )
+            mask = self._placeholder(
+                graph, fake_mode, "mask", (self.S, mask_len), torch.float32
+            )
+            kwargs = {
+                "query": q,
+                "key": q,
+                "value": q,
+                "start_pos": 0,
+                "seq_len": self.S,
+                "attn_mask": mask,
+                "drpout_p": 0.0,
+                "is_causal": False,
+                "scale": None,
+            }
+            if wrapper == torch.ops.higher_order.auto_functionalized:
+                kwargs.update(key_cache=k_cache, value_cache=v_cache)
+            else:
+                kwargs.update(
+                    _all_bases=[k_cache, v_cache],
+                    _key_cache_base_index=0,
+                    _value_cache_base_index=1,
+                )
+            node = graph.call_function(
+                wrapper, (torch.ops.llama.sdpa_with_kv_cache.default,), kwargs
+            )
+            self.assertEqual(
+                check_llm_sdpa_node(node),
+                mask_len == self.C
+                or wrapper == torch.ops.higher_order.auto_functionalized_v2,
+            )
+
+
+class _LLMSDPAModule(torch.nn.Module):
+    S, C, H, D = 4, 16, 2, 8
+
+    def __init__(self, dtype: torch.dtype) -> None:
+        super().__init__()
+        cache_shape = (1, self.C, self.H, self.D)
+        self.register_buffer("k_cache", torch.zeros(cache_shape, dtype=dtype))
+        self.register_buffer("v_cache", torch.zeros(cache_shape, dtype=dtype))
+
+    def forward(self, q, k, v, mask, input_pos):
+        pos = input_pos.item()
+        torch._check(pos >= 0)
+        torch._check(pos + self.S <= self.C)
+        torch.ops.llama.update_cache(k, self.k_cache, pos)
+        torch.ops.llama.update_cache(v, self.v_cache, pos)
+        out = torch.ops.llama.custom_sdpa(
+            q, self.k_cache, self.v_cache, pos, mask, 0.0, False
+        )
+        return out * 2.0
+
+    @classmethod
+    def example_inputs(cls, dtype: torch.dtype, mask_dtype: torch.dtype):
+        qkv_shape = (1, cls.S, cls.H, cls.D)
+        return (
+            torch.randn(qkv_shape, dtype=dtype),
+            torch.randn(qkv_shape, dtype=dtype),
+            torch.randn(qkv_shape, dtype=dtype),
+            torch.randn(cls.S, cls.C, dtype=mask_dtype),
+            torch.tensor([0]),
+        )
+
+
+class TestLLMSDPAMaskLowering(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+    def _lower(self, dtype: torch.dtype, mask_dtype: torch.dtype):
+        from executorch.exir.backend.utils import get_non_lowered_nodes
+        from executorch.exir.lowered_backend_module import get_lowered_submodules
+
+        ep = torch.export.export(
+            _LLMSDPAModule(dtype),
+            _LLMSDPAModule.example_inputs(dtype, mask_dtype),
+            strict=False,
+        )
+        lowered = to_edge_transform_and_lower(ep, partitioner=[VulkanPartitioner()])
+        graph_module = lowered.exported_program().graph_module
+        cpu_ops = {
+            node.target
+            for node in get_non_lowered_nodes(graph_module.graph)
+            if node.op == "call_function"
+        }
+        submodules = get_lowered_submodules(graph_module)
+        self.assertEqual(len(submodules), 1)
+        vk_graph = flatbuffer_to_vk_graph(
+            extract_vk_flatbuffer(submodules[0][1].processed_bytes)
+        )
+        return cpu_ops, vk_graph
+
+    def test_masked_custom_sdpa_is_delegated(self):
+        for dtype in (torch.float32, torch.float16):
+            # The CPU op requires an fp32 mask, also for an fp16 query.
+            cpu_ops, vk_graph = self._lower(dtype, torch.float32)
+            self.assertFalse(
+                [
+                    op
+                    for op in cpu_ops
+                    if "llama" in str(op) or "auto_functionalized" in str(op)
+                ]
+            )
+            masks = [
+                value.value
+                for value in vk_graph.values
+                if hasattr(value.value, "dims")
+                and list(value.value.dims) == [_LLMSDPAModule.S, _LLMSDPAModule.C]
+            ]
+            self.assertEqual(len(masks), 1)
+            if dtype != torch.float32:
+                # Only the texture shaders can read a mask of another dtype.
+                self.assertEqual(masks[0].storage_type, VkStorageType.TEXTURE_3D)

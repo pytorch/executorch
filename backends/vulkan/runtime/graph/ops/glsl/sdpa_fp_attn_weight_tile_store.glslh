@@ -15,9 +15,9 @@
  * Tile precision is controlled by the caller via LINEAR_FP_OUTPUT_TILE_VEC4_T
  * (fused SDPA sets it to vec4 for fp32 accumulation; LLM SDPA leaves it as
  * VEC4_T for input-dtype accumulation). All helper functions below are
- * available at all times and compile correctly in both modes. The only
- * gated helper is apply_bias, which requires t_bias/bias_sizes and is
- * therefore guarded by HAS_BIAS.
+ * available at all times and compile correctly in both modes, except
+ * apply_bias and apply_attn_mask, which require t_bias/bias_sizes and
+ * t_mask/mask_sizes and are therefore guarded by HAS_BIAS and HAS_MASK.
  *
  * Required macros/variables:
  *   t_attn_weights  — output buffer/texture
@@ -150,6 +150,39 @@ void apply_bias(
   }
 }
 #endif // HAS_BIAS
+
+#ifdef HAS_MASK
+/*
+ * Adds the LLM SDPA additive attn_mask, a 2D [S, C] tensor shared by every
+ * head, to the tile. Requires t_mask and mask_sizes, and a c_idx_start that is
+ * a multiple of 4. The mask is read one texel per 4 columns; buffer rows are
+ * padded to whole texels like texture rows. Padding lanes past C only reach
+ * attention weight lanes that softmax ignores.
+ */
+void apply_attn_mask(
+    inout FPOutTile tile,
+    const int c_idx_start,
+    const int s_idx_start) {
+  const int mask_C4 = div_up_4(mask_sizes.x);
+  const int mask_S = mask_sizes.y;
+  [[unroll]] for (int s = 0; s < TILE_M; ++s) {
+    const int s_idx = s_idx_start + s;
+    [[unroll]] for (int c4 = 0; c4 < TILE_N4; ++c4) {
+      const int c4_idx = div_4(c_idx_start) + c4;
+      if (s_idx >= mask_S || c4_idx >= mask_C4) {
+        continue;
+      }
+#ifdef INPUT_BUFFER
+      const vec4 mask_texel = vec4(t_mask[s_idx * mask_C4 + c4_idx]);
+#else
+      const vec4 mask_texel =
+          vec4(texelFetch(t_mask, ivec3(c4_idx, s_idx, 0), 0));
+#endif
+      tile.data[s][c4] += LINEAR_FP_OUTPUT_TILE_VEC4_T(mask_texel);
+    }
+  }
+}
+#endif // HAS_MASK
 
 void set_out_tile_to_vec(out FPOutTile tile, const LINEAR_FP_OUTPUT_TILE_VEC4_T vec) {
   [[unroll]] for (int s = 0; s < TILE_M; ++s) {

@@ -71,6 +71,50 @@ class DynamicArangeModule(torch.nn.Module):
         return x + torch.arange(0, x.shape[0], 1, dtype=torch.float32)
 
 
+class LLMSDPAModule(torch.nn.Module):
+    S, C, H, D = 4, 16, 2, 8
+
+    def __init__(self, masked: bool) -> None:
+        super().__init__()
+        self.masked = masked
+        self.register_buffer("k_cache", torch.zeros(1, self.C, self.H, self.D))
+        self.register_buffer("v_cache", torch.zeros(1, self.C, self.H, self.D))
+
+    def forward(
+        self,
+        q: torch.Tensor,
+        k: torch.Tensor,
+        v: torch.Tensor,
+        mask: torch.Tensor,
+        input_pos: torch.Tensor,
+    ) -> torch.Tensor:
+        pos = input_pos.item()
+        torch._check(pos >= 0)
+        torch._check(pos + self.S <= self.C)
+        torch.ops.llama.update_cache(k, self.k_cache, pos)
+        torch.ops.llama.update_cache(v, self.v_cache, pos)
+        out = torch.ops.llama.custom_sdpa(
+            q,
+            self.k_cache,
+            self.v_cache,
+            pos,
+            mask if self.masked else None,
+            0.0,
+            not self.masked,
+        )
+        return out * 2.0
+
+    @classmethod
+    def example_inputs(cls) -> Tuple[torch.Tensor, ...]:
+        return (
+            torch.randn(1, cls.S, cls.H, cls.D),
+            torch.randn(1, cls.S, cls.H, cls.D),
+            torch.randn(1, cls.S, cls.H, cls.D),
+            torch.randn(cls.S, cls.C),
+            torch.tensor([0]),
+        )
+
+
 class TestWebGPUPartitioner(unittest.TestCase):
     def _export_add(self) -> ExportedProgram:
         return torch.export.export(
@@ -312,6 +356,26 @@ class TestWebGPUPartitioner(unittest.TestCase):
 
     def _targets(self, nodes: List[torch.fx.Node]) -> List[object]:
         return [node.target for node in nodes]
+
+    def test_masked_llm_sdpa_stays_on_cpu(self) -> None:
+        # Vulkan fuses a masked custom_sdpa into sdpa_with_kv_cache; the WebGPU
+        # kernel has no attn_mask, so the attention and its cache updates must
+        # stay on CPU rather than fail at delegate init.
+        from executorch.extension.llm.custom_ops import custom_ops  # noqa: F401
+
+        custom_sdpa = exir_ops.edge.llama.custom_sdpa.default
+        for masked in (False, True):
+            for partitioner in (VulkanPartitioner(), WebGPUPartitioner()):
+                with self.subTest(masked=masked, partitioner=type(partitioner)):
+                    non_lowered, _ = self._lower_split(
+                        partitioner,
+                        LLMSDPAModule(masked),
+                        LLMSDPAModule.example_inputs(),
+                    )
+                    on_cpu = custom_sdpa in self._targets(non_lowered)
+                    self.assertEqual(
+                        on_cpu, masked and isinstance(partitioner, WebGPUPartitioner)
+                    )
 
     def test_layer_norm_over_last_dim_only(self) -> None:
         layer_norm = exir_ops.edge.aten.native_layer_norm.default
