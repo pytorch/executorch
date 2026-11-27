@@ -20,9 +20,9 @@ namespace runtime {
 static constexpr size_t kMaxOptionKeyLength = 64;
 static constexpr size_t kMaxOptionValueLength = 256;
 
-// All string keys and values must have static storage duration (string
-// literals, static const char arrays, or global constants). The BackendOptions
-// class does NOT take ownership of strings.
+// Keys and string values are copied into the fixed-size arrays below,
+// including their NUL terminators. BackendOptions rejects a key or value that
+// does not fit instead of shortening it.
 using OptionValue =
     std::variant<bool, int, std::array<char, kMaxOptionValueLength>>;
 
@@ -95,7 +95,7 @@ class BackendOptions {
   template <size_t N>
   Error set_option(const char (&key)[N], bool value) noexcept {
     static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
-    return set_option_impl(key, value);
+    return set_option_impl(key, N, value);
   }
 
   /**
@@ -110,29 +110,50 @@ class BackendOptions {
   template <size_t N>
   Error set_option(const char (&key)[N], int value) noexcept {
     static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
-    return set_option_impl(key, value);
+    return set_option_impl(key, N, value);
   }
 
   /**
    * Sets a string option value for the given key.
    * If the key already exists, updates its value. Otherwise, adds a new option.
    *
-   * Note: The string value must have static storage duration. This class does
-   * NOT take ownership of the string - it only stores the pointer.
+   * The string is copied, so it only needs to live for the duration of the
+   * call. A value longer than kMaxOptionValueLength - 1 bytes is rejected
+   * rather than cut: a shortened value, such as a file path, can silently
+   * name something else.
    *
    * @tparam N The length of the key string (automatically deduced)
    * @param key The option key (must be a string literal or array)
-   * @param value The string value to set (must have static storage duration)
-   * @return Error::Ok on success, Error::InvalidArgument if storage is full
+   * @param value The NUL-terminated string value to set
+   * @return Error::Ok on success, Error::InvalidArgument if storage is full,
+   * the value is null, or the value does not fit. On error the options are
+   * left unchanged.
    */
   template <size_t N>
   Error set_option(const char (&key)[N], const char* value) noexcept {
     static_assert(N <= kMaxOptionKeyLength, "Option key is too long");
-    // Create a fixed-size array and copy the string
+    if (value == nullptr) {
+      ET_LOG(
+          Error,
+          "Backend option '%.*s' has a null value",
+          static_cast<int>(N),
+          key);
+      return Error::InvalidArgument;
+    }
+    const size_t value_len = std::strlen(value);
+    if (value_len >= kMaxOptionValueLength) {
+      ET_LOG(
+          Error,
+          "Backend option '%.*s' value is %zu bytes, longer than the %zu byte limit; not set",
+          static_cast<int>(N),
+          key,
+          value_len,
+          kMaxOptionValueLength - 1);
+      return Error::InvalidArgument;
+    }
     std::array<char, kMaxOptionValueLength> arr{};
-    strncpy(arr.data(), value, kMaxOptionValueLength - 1);
-    arr[kMaxOptionValueLength - 1] = '\0'; // Ensure null termination
-    return set_option_impl(key, arr);
+    std::memcpy(arr.data(), value, value_len);
+    return set_option_impl(key, N, arr);
   }
   /**
    * Retrieves an option value by key and type.
@@ -178,11 +199,23 @@ class BackendOptions {
    *
    * @tparam T The type of the value (bool, int, or const char*)
    * @param key The option key
+   * @param key_capacity The size of the caller's key array, at most
+   * kMaxOptionKeyLength
    * @param value The value to set
    * @return Error::Ok on success, Error::InvalidArgument if storage is full
+   * or the key is not NUL-terminated within its array
    */
   template <typename T>
-  Error set_option_impl(const char* key, T value) {
+  Error set_option_impl(const char* key, size_t key_capacity, T value) {
+    if (std::memchr(key, '\0', key_capacity) == nullptr) {
+      ET_LOG(
+          Error,
+          "Backend option key '%.*s' is not NUL-terminated within %zu bytes; not set",
+          static_cast<int>(key_capacity),
+          key,
+          key_capacity);
+      return Error::InvalidArgument;
+    }
     // Update existing if found
     for (size_t i = 0; i < size_; ++i) {
       if (strcmp(options_[i].key, key) == 0) {
@@ -192,10 +225,10 @@ class BackendOptions {
     }
     if (size_ < MaxCapacity) {
       BackendOption new_option;
+      // The NUL check above bounds key_len to key_capacity - 1, which is at
+      // most kMaxOptionKeyLength - 1, so the key and its NUL always fit.
       const size_t key_len = std::strlen(key);
-      const size_t copy_len = std::min(key_len, kMaxOptionKeyLength - 1);
-      std::memcpy(new_option.key, key, copy_len);
-      new_option.key[copy_len] = '\0';
+      std::memcpy(new_option.key, key, key_len + 1);
       new_option.value = value; // Restored value assignment
       options_[size_++] = new_option; // Store option and increment size
       return Error::Ok;
