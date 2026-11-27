@@ -125,6 +125,7 @@ def _serving(
     content_filter=None,
     content_filter_specials=None,
     supports_ignore_eos=False,
+    stop_on_special_tokens=True,
 ):
     runner = _Runner(tokens, gen_ids=gen_ids, honor_stops=honor_stops)
     if supports_ignore_eos:
@@ -139,6 +140,7 @@ def _serving(
         tool_detector_cls=HermesDetector,
         content_filter=content_filter,
         content_filter_specials=content_filter_specials,
+        stop_on_special_tokens=stop_on_special_tokens,
     )
     return serving, runner
 
@@ -275,6 +277,77 @@ def test_plain_chat_broad_stop_marks_turn_nonresumable():
     )
     assert r.json()["choices"][0]["message"]["content"] == "Hi"
     assert serving._transcript._turns["s"][0]["ids"] is None
+
+
+# stop_on_special_tokens=False: plain chat stops only on turn terminators and
+# passes other specials through, like the tool path's stop set.
+
+
+def test_no_special_token_stops_worker_stops_exclude_broad_specials():
+    serving, runner = _serving(["hi"], stop_on_special_tokens=False)
+    _client(serving).post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    stops = runner.captured_config.stop or []
+    assert FIM not in stops
+    assert _SpecialTok.eos_token in stops
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_no_special_token_stops_passes_special_through(stream):
+    # honor_stops: the worker would halt here if the special were a stop.
+    serving, _ = _serving(
+        ["Hi", FIM, "more"], honor_stops=True, stop_on_special_tokens=False
+    )
+    r = _client(serving).post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "stream": stream,
+        },
+    )
+    if stream:
+        content, finish = _sse_content(r.text)
+    else:
+        choice = r.json()["choices"][0]
+        content, finish = choice["message"]["content"], choice["finish_reason"]
+    assert content == f"Hi{FIM}more"
+    assert finish == "stop"
+
+
+def test_no_special_token_stops_keeps_turn_resumable():
+    serving, _ = _serving(
+        ["Hi", FIM, "more"],
+        honor_stops=True,
+        gen_ids=[1, 2, 3],
+        stop_on_special_tokens=False,
+    )
+    _client(serving).post(
+        "/v1/chat/completions",
+        json={
+            "model": "test-model",
+            "messages": [{"role": "user", "content": "hi"}],
+            "session_id": "s",
+        },
+    )
+    assert serving._transcript._turns["s"][0]["ids"] == [1, 2, 3]
+
+
+def test_no_special_token_stops_still_stops_at_turn_end():
+    serving, _ = _serving(
+        ["Hi", FIM, _SpecialTok.eos_token, "after"],
+        honor_stops=True,
+        stop_on_special_tokens=False,
+    )
+    r = _client(serving).post(
+        "/v1/chat/completions",
+        json={"model": "test-model", "messages": [{"role": "user", "content": "hi"}]},
+    )
+    choice = r.json()["choices"][0]
+    assert choice["message"]["content"] == f"Hi{FIM}"
+    assert choice["finish_reason"] == "stop"
 
 
 @pytest.mark.parametrize("stream", [False, True])

@@ -139,6 +139,13 @@ def _parse_args(argv=None):
         "--api-dialect", choices=("openai", "openrouter"), default="openai"
     )
     parser.add_argument(
+        "--no-special-token-stops",
+        dest="special_token_stops",
+        action="store_false",
+        help="Plain chat (no tools) stops only on end-of-turn tokens and passes "
+        "other special tokens through, instead of ending the reply at the first one",
+    )
+    parser.add_argument(
         "--streaming-preflight-timeout",
         type=_parse_preflight_timeout,
         default=None,
@@ -247,6 +254,7 @@ def main(argv=None) -> None:
                     tool_detector_cls=HermesDetector,
                     api_dialect=args.api_dialect,
                     streaming_preflight_timeout=args.streaming_preflight_timeout,
+                    stop_on_special_tokens=args.special_token_stops,
                 )
             finally:
                 if runtime is None:

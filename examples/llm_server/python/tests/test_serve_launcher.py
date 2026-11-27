@@ -135,6 +135,11 @@ def native_launch(launch):
     return launch
 
 
+def test_no_special_token_stops_reaches_serving(argv, launch):
+    serve.main(argv + ["--no-special-token-stops"])
+    assert launch.stages["serving"].call_args.kwargs["stop_on_special_tokens"] is False
+
+
 @pytest.mark.parametrize("entries,interval", [(0, 8), (2, -1), (2, 1 << 31)])
 def test_invalid_checkpoint_options(argv, entries, interval):
     with pytest.raises(SystemExit):
@@ -298,6 +303,7 @@ def test_default_launch_requires_multiplexing_and_shares_context(argv, launch):
         tool_detector_cls=HermesDetector,
         api_dialect="openai",
         streaming_preflight_timeout=None,
+        stop_on_special_tokens=True,
     )
     app = launch.stages["uvicorn"].call_args.args[0]
     launch.stages["uvicorn"].assert_called_once_with(app, host="127.0.0.1", port=8000)
