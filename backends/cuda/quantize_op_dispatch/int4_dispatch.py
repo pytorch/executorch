@@ -25,7 +25,11 @@ run, the smallest bucket of ``INT4_QUANTIZED_GEMM`` that supports the inputs
 speculative block length in [2, 4], takes the smallest bucket that holds it).
 Everything else (prefill, an unbounded dynamic M, a group size other than 32,
 K not a multiple of 256, other dtypes, CPU eager) uses inline dequant +
-F.linear, never an error.
+F.linear, never an error. With ``EXECUTORCH_CUDA_INT4_PREFILL_W4A8=1`` (or
+``set_prefill_w4a8_enabled(True)``), prefill and unbounded dynamic M instead use
+the fused W4A8 kernel ``triton::int4_w4a8_prefill_gemm``
+(triton/kernels/int4_w4a8_prefill_gemm.py) where it is legal; the decode
+buckets are unchanged.
 
 Importing the parent ``quantize_op_dispatch`` package registers this dispatch
 override (along with the other formats) before using nn.Linear with
@@ -34,13 +38,53 @@ CudaCoalescedInt4Tensor weights::
     import executorch.backends.cuda.quantize_op_dispatch  # noqa: F401
 """
 
+import functools
+import logging
+import os
+
 import torch
 import torch.nn.functional as F
 from executorch.backends.cuda.coalesced_int4_tensor import CudaCoalescedInt4Tensor
 from executorch.backends.cuda.quantize_op_dispatch._gemm_family_dispatch import (
+    can_launch_triton,
     chunked_dequant_linear,
     quantized_linear,
 )
+
+logger: logging.Logger = logging.getLogger(__name__)
+
+PREFILL_W4A8_ENV = "EXECUTORCH_CUDA_INT4_PREFILL_W4A8"
+
+_prefill_w4a8_override: bool | None = None
+
+
+def set_prefill_w4a8_enabled(enabled: bool | None) -> None:
+    """Overrides ``PREFILL_W4A8_ENV``; ``None`` returns control to it."""
+    global _prefill_w4a8_override
+    _prefill_w4a8_override = enabled
+
+
+@functools.cache
+def _parse_prefill_w4a8_flag(value: str) -> bool:
+    if value in ("0", "1"):
+        return value == "1"
+    logger.warning(
+        "Ignoring %s=%r: expected 0 or 1; W4A8 prefill stays off.",
+        PREFILL_W4A8_ENV,
+        value,
+    )
+    return False
+
+
+def prefill_w4a8_enabled() -> bool:
+    """Whether prefill (no decode bucket) routes to ``triton::int4_w4a8_prefill_gemm``.
+
+    Read at each dispatch, so the environment may be set after import. Decode
+    buckets (M <= 64) are unaffected either way.
+    """
+    if _prefill_w4a8_override is not None:
+        return _prefill_w4a8_override
+    return _parse_prefill_w4a8_flag(os.environ.get(PREFILL_W4A8_ENV, "0"))
 
 
 def _dequant_matmul(x, qdata, scale, scale_step, zero, zero_point_step, group_size):
@@ -83,6 +127,25 @@ def _dequant_matmul(x, qdata, scale, scale_step, zero, zero_point_step, group_si
     return chunked_dequant_linear(x, N, dequant_linear_rows)
 
 
+def _prefill_linear(x, *weight_args):
+    """No decode bucket serves ``x``: fused W4A8 prefill when enabled and legal.
+
+    ``int4_w4a8_prefill_linear`` picks the launch config and keeps dequant +
+    F.linear where that measured faster.
+    """
+    if prefill_w4a8_enabled() and can_launch_triton(x):
+        from executorch.backends.cuda.triton.kernels.int4_w4a8_prefill_gemm import (
+            int4_w4a8_prefill_linear,
+            prefill_unsupported_reason,
+        )
+
+        if prefill_unsupported_reason(x, *weight_args) is None:
+            return int4_w4a8_prefill_linear(
+                x, weight_args, lambda x_: _dequant_matmul(x_, *weight_args)
+            )
+    return _dequant_matmul(x, *weight_args)
+
+
 # ---------------------------------------------------------------------------
 # CudaCoalescedInt4Tensor F.linear dispatch
 # ---------------------------------------------------------------------------
@@ -117,5 +180,5 @@ def _(func, types, args, kwargs):
         input_tensor,
         weight_args,
         bias,
-        lambda x_2d: _dequant_matmul(x_2d, *weight_args),
+        lambda x_2d: _prefill_linear(x_2d, *weight_args),
     )
