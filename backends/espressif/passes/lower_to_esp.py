@@ -342,6 +342,82 @@ def _lower_avg_pool2d(program, node) -> bool:
     return True
 
 
+def _mean_multiplier(input_params, output_params, count):
+    try:
+        multiplier, shift = quantize_multiplier(
+            input_params.scale / output_params.scale / count
+        )
+    except ValueError:
+        return None
+    max_input = max(abs(-128 - input_params.zp), abs(127 - input_params.zp))
+    if shift < -30 or (count * max_input) << max(shift, 0) > torch.iinfo(
+        torch.int32
+    ).max - abs(output_params.zp):
+        return None
+    max_float_input = c_float(max_input * c_float(input_params.scale).value).value
+    rounding_bound = 1 - count * torch.finfo(torch.float32).eps
+    if (
+        rounding_bound <= 0
+        or max_float_input * count / rounding_bound > torch.finfo(torch.float32).max
+        or not math.isfinite(c_float(1.0 / output_params.scale).value)
+    ):
+        return None
+    return multiplier, shift
+
+
+def _lower_mean(program, node) -> bool:
+    inp = get_arg(node, "inp", torch.fx.Node)
+    value = inp.meta.get("val")
+    if (
+        not isinstance(value, torch.Tensor)
+        or value.dim() != 4
+        or value.dtype != torch.int8
+        or any(type(dim) is not int or dim <= 0 for dim in value.shape)
+        or value.numel() > torch.iinfo(torch.int32).max
+        or not value.is_contiguous()
+        or get_arg(node, "dtype") not in (None, torch.float32)
+    ):
+        return False
+    dims = get_arg(node, "dim")
+    if (
+        not isinstance(dims, (tuple, list))
+        or len(dims) != 2
+        or any(type(dim) is not int or not -4 <= dim < 4 for dim in dims)
+        or sorted(dim % 4 for dim in dims) != [2, 3]
+    ):
+        return False
+    input_params, output_params = (
+        _qparams(program, node, prefix) for prefix in ("inp", "out")
+    )
+    if input_params is None or output_params is None:
+        return False
+    batch, channels, height, width = value.shape
+    multiplier = _mean_multiplier(input_params, output_params, height * width)
+    if multiplier is None:
+        return False
+    graph = node.graph
+    with graph.inserting_before(node):
+        nhwc = graph.call_function(
+            exir_ops.edge.aten.permute_copy.default, (inp, [0, 2, 3, 1])
+        )
+        nhwc.meta["val"] = value.permute(0, 2, 3, 1).contiguous()
+        replacement = graph.call_function(
+            exir_ops.edge.esp_nn.quantized_mean_int8.default,
+            (nhwc, input_params.zp, output_params.zp, *multiplier),
+        )
+        replacement.meta = node.meta.copy()
+        replacement.meta["val"] = value.new_empty((batch, channels))
+        if get_arg(node, "keepdim"):
+            replacement = graph.call_function(
+                exir_ops.edge.aten.view_copy.default,
+                (replacement, [batch, channels, 1, 1]),
+            )
+            replacement.meta = node.meta.copy()
+    node.replace_all_uses_with(replacement)
+    graph.erase_node(node)
+    return True
+
+
 def _weighted_multipliers(input_params, output_params, weight, scales, bias):
     rescales = [
         quantize_multiplier(input_params.scale * scale / output_params.scale)
@@ -682,6 +758,14 @@ def _lower_conv2d(program, node, constants, target, kernel_mode):
     return True
 
 
+_UNARY_LOWERINGS = {
+    exir_ops.edge.fused_quant.mean.dim: _lower_mean,
+    exir_ops.edge.fused_quant.avg_pool2d_channels_last.default: _lower_avg_pool2d,
+    exir_ops.edge.fused_quant.max_pool2d_with_indices_channels_last.default: _lower_max_pool2d,
+    **dict.fromkeys(_LUT_OPS, _lower_lut),
+}
+
+
 class LowerToEsp(ExportedProgramPassBase):
     """Lower supported fused-quant operators to ESP-NN."""
 
@@ -715,8 +799,9 @@ class LowerToEsp(ExportedProgramPassBase):
 
         modified = False
         for node in list(graph.nodes):
-            if node.target in _LUT_OPS:
-                modified |= _lower_lut(exported_program, node)
+            unary_lowering = _UNARY_LOWERINGS.get(node.target)
+            if unary_lowering is not None:
+                modified |= unary_lowering(exported_program, node)
                 continue
             if node.target == exir_ops.edge.fused_quant.linear.default:
                 modified |= _lower_linear(exported_program, node, constants)
@@ -728,18 +813,6 @@ class LowerToEsp(ExportedProgramPassBase):
                 modified |= _lower_conv2d(
                     exported_program, node, constants, self.target, self.kernel_mode
                 )
-                continue
-            if (
-                node.target
-                == exir_ops.edge.fused_quant.avg_pool2d_channels_last.default
-            ):
-                modified |= _lower_avg_pool2d(exported_program, node)
-                continue
-            if (
-                node.target
-                == exir_ops.edge.fused_quant.max_pool2d_with_indices_channels_last.default
-            ):
-                modified |= _lower_max_pool2d(exported_program, node)
                 continue
             lowering = _BINARY_LOWERINGS.get(node.target)
             if lowering is None:

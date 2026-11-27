@@ -67,6 +67,14 @@ lib.define(
     "int[2] padding, *, Tensor(a!) out) -> Tensor(a!)"
 )
 lib.define(
+    "quantized_mean_int8(Tensor input, int input_zero_point, int output_zero_point, "
+    "int output_multiplier, int output_shift) -> Tensor"
+)
+lib.define(
+    "quantized_mean_int8.out(Tensor input, int input_zero_point, int output_zero_point, "
+    "int output_multiplier, int output_shift, *, Tensor(a!) out) -> Tensor(a!)"
+)
+lib.define(
     "quantized_linear_int8(Tensor input, Tensor weight, Tensor? bias, "
     "Tensor output_multiplier, Tensor output_shift, int input_offset, int output_offset, "
     "int activation_min, int activation_max) -> Tensor"
@@ -152,6 +160,23 @@ def quantized_avg_pool2d_int8(input, kernel_size, stride, padding):
                 .to(torch.int8)
             )
     return result
+
+
+@register_fake("esp_nn::quantized_mean_int8")
+def quantized_mean_int8_meta(
+    input, input_zero_point, output_zero_point, output_multiplier, output_shift
+):
+    batch, _, _, channels = input.shape
+    return input.new_empty((batch, channels))
+
+
+@impl(lib, "quantized_mean_int8", "CompositeExplicitAutograd")
+def quantized_mean_int8(
+    input, input_zero_point, output_zero_point, output_multiplier, output_shift
+):
+    total = (input.to(torch.int64) - input_zero_point).sum((1, 2))
+    result = requantize(total, output_multiplier, output_shift) + output_zero_point
+    return result.clamp(-128, 127).to(torch.int8)
 
 
 @register_fake("esp_nn::quantized_mul_int8")
