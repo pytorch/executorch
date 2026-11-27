@@ -2645,19 +2645,29 @@ static bool test_slice_double_start() {
   return ok;
 }
 
+// How the select `dim` argument is serialized. The two dynamic kinds prepend
+// the ops that make the SymInt runtime-driven: SymIntFromDim a sym_size.int,
+// SymIntFromArithmetic a sym_size.int plus an `add` whose result feeds select.
+enum class SelectDimKind {
+  Double,
+  Int,
+  SymIntConstant,
+  SymIntFromDim,
+  SymIntFromArithmetic,
+};
+
 // Regression for serialized integer select arguments that alias an earlier
 // floating-point scalar in the Vulkan scalar cache. A production graph has
-// select calls whose dim and index both reference Double 0.0.
+// select calls whose dim and index both reference Double 0.0, and others whose
+// dim lands in a SymInt slot holding a constant.
 static void finish_select_scalar_graph(
     ::flatbuffers::FlatBufferBuilder& fbb,
     double dim,
     double index,
-    uint32_t out_len,
-    bool symint_dim = false) {
+    const std::vector<uint32_t>& out_dims,
+    SelectDimKind dim_kind = SelectDimKind::Double,
+    const std::vector<uint32_t>& in_dims = {2u, 3u}) {
   namespace vk = vkgraph;
-  std::vector<uint32_t> in_dims = {2u, 3u};
-  std::vector<uint32_t> out_dims = {out_len};
-
   std::vector<::flatbuffers::Offset<vk::VkValue>> values;
   values.push_back(vk::CreateVkValue(
       fbb,
@@ -2669,16 +2679,27 @@ static void finish_select_scalar_graph(
           /*constant_id=*/-1,
           /*mem_obj_id=*/0)
           .Union()));
-  if (symint_dim) {
-    values.push_back(vk::CreateVkValue(
-        fbb,
-        vk::GraphTypes::SymInt,
-        vk::CreateSymInt(fbb, /*value=*/0).Union()));
-  } else {
-    values.push_back(vk::CreateVkValue(
-        fbb,
-        vk::GraphTypes::Double,
-        vk::CreateDouble(fbb, /*double_val=*/dim).Union()));
+  switch (dim_kind) {
+    case SelectDimKind::Double:
+      values.push_back(vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::Double,
+          vk::CreateDouble(fbb, /*double_val=*/dim).Union()));
+      break;
+    case SelectDimKind::Int:
+      values.push_back(vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::Int,
+          vk::CreateInt(fbb, static_cast<int64_t>(dim)).Union()));
+      break;
+    case SelectDimKind::SymIntConstant:
+    case SelectDimKind::SymIntFromDim:
+    case SelectDimKind::SymIntFromArithmetic:
+      values.push_back(vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::SymInt,
+          vk::CreateSymInt(fbb, static_cast<int32_t>(dim)).Union()));
+      break;
   }
   values.push_back(vk::CreateVkValue(
       fbb,
@@ -2695,8 +2716,31 @@ static void finish_select_scalar_graph(
           /*mem_obj_id=*/1)
           .Union()));
 
-  std::vector<int32_t> args = {0, 1, 2, 3};
   std::vector<::flatbuffers::Offset<vk::OperatorCall>> chain;
+  const bool via_arithmetic = dim_kind == SelectDimKind::SymIntFromArithmetic;
+  // sym_size.int(in, dim=0) lands directly in the select dim (value 1), or in
+  // an intermediate SymInt (value 5) that `add` combines into value 1.
+  const std::vector<int32_t> sym_size_args = {0, 4, via_arithmetic ? 5 : 1};
+  const std::vector<int32_t> sym_add_args = {5, 6, 1};
+  if (dim_kind == SelectDimKind::SymIntFromDim || via_arithmetic) {
+    values.push_back(vk::CreateVkValue(
+        fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 0).Union()));
+    if (via_arithmetic) {
+      values.push_back(vk::CreateVkValue(
+          fbb,
+          vk::GraphTypes::SymInt,
+          vk::CreateSymInt(fbb, /*value=*/0).Union()));
+      values.push_back(vk::CreateVkValue(
+          fbb, vk::GraphTypes::Int, vk::CreateInt(fbb, 1).Union()));
+    }
+    chain.push_back(
+        vk::CreateOperatorCallDirect(fbb, 0, "sym_size.int", &sym_size_args));
+    if (via_arithmetic) {
+      chain.push_back(
+          vk::CreateOperatorCallDirect(fbb, 0, "add", &sym_add_args));
+    }
+  }
+  std::vector<int32_t> args = {0, 1, 2, 3};
   chain.push_back(
       vk::CreateOperatorCallDirect(fbb, 0, "aten.select_copy.int", &args));
   std::vector<uint32_t> input_ids = {0};
@@ -2714,7 +2758,7 @@ static bool test_select_double_scalar_case(
       "\n--- Test: select Double scalars (dim=%g, index=%g) ---\n", dim, index);
   ::flatbuffers::FlatBufferBuilder fbb;
   finish_select_scalar_graph(
-      fbb, dim, index, static_cast<uint32_t>(expected.size()));
+      fbb, dim, index, {static_cast<uint32_t>(expected.size())});
 
   WebGPUGraph graph;
   try {
@@ -2752,9 +2796,9 @@ static bool test_select_scalar_build_error(
     double dim,
     double index,
     const char* expected_error,
-    bool symint_dim = false) {
+    SelectDimKind dim_kind = SelectDimKind::Double) {
   ::flatbuffers::FlatBufferBuilder fbb;
-  finish_select_scalar_graph(fbb, dim, index, /*out_len=*/3u, symint_dim);
+  finish_select_scalar_graph(fbb, dim, index, /*out_dims=*/{3u}, dim_kind);
 
   WebGPUGraph graph;
   try {
@@ -2773,6 +2817,85 @@ static bool test_select_scalar_build_error(
   }
   printf("FAIL: expected graph build to reject select scalars\n");
   return false;
+}
+
+// A SymInt slot holding a serializer-parked constant is not dynamic: nothing
+// drives it at execute, so select must accept it like a static Int.
+static bool test_select_constant_symint_dim_builds() {
+  printf("\n--- Test: select constant SymInt dim builds ---\n");
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_select_scalar_graph(
+      fbb,
+      /*dim=*/0.0,
+      /*index=*/0.0,
+      /*out_dims=*/{3u},
+      SelectDimKind::SymIntConstant);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+  } catch (const std::exception& e) {
+    printf("FAIL: constant SymInt dim rejected: %s\n", e.what());
+    return false;
+  }
+  printf("PASS: select constant SymInt dim builds\n");
+  return true;
+}
+
+// Runs select(dim=0, index=0) and writes the graph output into `out`.
+static bool run_select_dim0(
+    SelectDimKind dim_kind,
+    const std::vector<uint32_t>& in_dims,
+    const std::vector<uint32_t>& out_dims,
+    const std::vector<float>& in,
+    std::vector<float>& out) {
+  ::flatbuffers::FlatBufferBuilder fbb;
+  finish_select_scalar_graph(
+      fbb, /*dim=*/0.0, /*index=*/0.0, out_dims, dim_kind, in_dims);
+
+  WebGPUGraph graph;
+  try {
+    graph.build(fbb.GetBufferPointer(), nullptr, 0, nullptr);
+    std::vector<InputData> inputs = {
+        {in.data(), in.size() * sizeof(float), false}};
+    std::vector<OutputData> outputs = {
+        {out.data(), out.size() * sizeof(float), true}};
+    graph.copy_inputs(inputs);
+    const WebGPUExecutionPlan plan = graph.make_execution_plan({});
+    graph.execute(plan);
+    graph.copy_outputs(outputs, plan);
+  } catch (const std::exception& e) {
+    printf("FAIL: select run threw: %s\n", e.what());
+    return false;
+  }
+  return true;
+}
+
+static bool test_select_symint_dim_matches_int_dim() {
+  printf("\n--- Test: select SymInt dim matches static Int dim ---\n");
+  const std::vector<uint32_t> in_dims = {1u, 2u, 3u};
+  const std::vector<uint32_t> out_dims = {2u, 3u};
+  const std::vector<float> in = {0.5f, 1.5f, 2.5f, 3.5f, 4.5f, 5.5f};
+
+  std::vector<float> int_out(in.size(), -1.0f);
+  std::vector<float> symint_out(in.size(), -2.0f);
+  if (!run_select_dim0(SelectDimKind::Int, in_dims, out_dims, in, int_out) ||
+      !run_select_dim0(
+          SelectDimKind::SymIntConstant, in_dims, out_dims, in, symint_out)) {
+    return false;
+  }
+
+  // Dropping a leading extent-1 axis is the identity on the buffer.
+  if (int_out != in) {
+    printf("FAIL: static-Int dim select did not reproduce the [1,N,M] input\n");
+    return false;
+  }
+  if (symint_out != int_out) {
+    printf("FAIL: SymInt dim select disagrees with static Int dim\n");
+    return false;
+  }
+  printf("PASS: select SymInt dim matches static Int dim\n");
+  return true;
 }
 
 static bool test_select_double_scalars() {
@@ -2821,12 +2944,26 @@ static bool test_select_double_scalars() {
   ok = test_select_scalar_build_error(
            -kInt64Limit, /*index=*/0.0, "select: dim out of range") &&
       ok;
+  // A SymInt fed by sym_size.int really is runtime-driven: select drops an
+  // axis, so a varying dim would change the output rank. Still rejected.
   ok = test_select_scalar_build_error(
            /*dim=*/0.0,
            /*index=*/0.0,
            "select: dynamic/unsupported dim",
-           /*symint_dim=*/true) &&
+           SelectDimKind::SymIntFromDim) &&
       ok;
+  // Arithmetic on a runtime-driven SymInt is just as dynamic. This one reaches
+  // select through a resize hook rather than a source registry, and its
+  // build-time seed (dim=1) is a valid dim -- so a missed guard would build
+  // and silently emit the wrong rank rather than erroring.
+  ok = test_select_scalar_build_error(
+           /*dim=*/0.0,
+           /*index=*/0.0,
+           "select: dynamic/unsupported dim",
+           SelectDimKind::SymIntFromArithmetic) &&
+      ok;
+  ok = test_select_constant_symint_dim_builds() && ok;
+  ok = test_select_symint_dim_matches_int_dim() && ok;
   return ok;
 }
 
