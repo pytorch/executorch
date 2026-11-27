@@ -14,6 +14,7 @@ import torch
 
 from executorch.exir.backend.backend_details import enforcedmethod
 from executorch.exir.backend.compile_spec_schema import CompileSpec
+from executorch.exir.pass_manager import PassType
 from torch.export import ExportedProgram
 
 
@@ -126,6 +127,31 @@ class Partitioner(ABC):
             in the list returned by ops_to_not_decompose.
         """
         return ([], None)
+
+    def transform_passes(self, exported_program: ExportedProgram) -> List[PassType]:
+        """Return passes to run on the edge program before partitioning.
+
+        EXIR invokes this hook automatically from
+        ``to_edge_transform_and_lower`` and runs the returned passes in the
+        same slot as its ``transform_passes`` argument, after any passes the
+        caller supplied there. Backend partitioners may override it to carry
+        edge-dialect rewrites that must run before ``partition`` sees the
+        graph, so callers do not have to thread backend-specific pass lists
+        through every lowering call.
+
+        When multiple partitioners are used for a method, their passes are
+        concatenated in the order supplied to ``to_edge_transform_and_lower``.
+
+        Args:
+            exported_program (ExportedProgram): The ATen-dialect program being
+                lowered, after ``transform_for_pre_decomposition`` has run and
+                before default decompositions. Supplied because pass
+                construction may depend on the graph.
+
+        Returns:
+            List[PassType]: Passes to run, in order. Empty by default.
+        """
+        return []
 
     def transform_for_pre_decomposition(
         self, exported_program: ExportedProgram

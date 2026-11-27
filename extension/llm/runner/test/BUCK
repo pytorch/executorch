@@ -45,3 +45,50 @@ fbcode_target(_kind = runtime.cxx_test,
         "NO_KVCACHE": "$(location fbcode//executorch/test/models:exported_programs[ModuleNoKVCache.pte])",
     }
 )
+
+fbcode_target(_kind = runtime.python_library,
+    name = "export_hf_static_program_lib",
+    srcs = ["export_hf_static_program.py"],
+    base_module = "executorch.extension.llm.runner.test",
+    deps = [
+        "//caffe2:torch",
+        "//executorch/exir:lib",
+    ],
+)
+
+fbcode_target(_kind = runtime.python_binary,
+    name = "export_hf_static_program",
+    main_module = "executorch.extension.llm.runner.test.export_hf_static_program",
+    deps = [":export_hf_static_program_lib"],
+)
+
+# A tiny program with Hugging Face's static-cache ABI.
+fbcode_target(_kind = runtime.genrule,
+    name = "hf_static_program",
+    cmd = "$(exe :export_hf_static_program) --outdir $OUT",
+    outs = {
+        "HfStaticTiny.pte": ["HfStaticTiny.pte"],
+        "HfStaticTinyHalf.pte": ["HfStaticTinyHalf.pte"],
+        "HfStaticTinyWithState.pte": ["HfStaticTinyWithState.pte"],
+    },
+    default_outs = ["."],
+)
+
+fbcode_target(_kind = runtime.cxx_test,
+    name = "test_hf_static_io_manager",
+    srcs = ["test_hf_static_io_manager.cpp"],
+    deps = [
+        "//executorch/extension/llm/runner:runner_lib",
+        "//executorch/extension/llm/runner/io_manager:hf_static_io_manager",
+        "//executorch/extension/llm/runner/io_manager:io_manager",
+        "//executorch/extension/module:module",
+        "//executorch/extension/tensor:tensor",
+        "//executorch/kernels/portable:generated_lib",
+    ],
+    env = {
+        "ET_HF_STATIC_FIXTURES_DIR": "$(location :hf_static_program)",
+        "ET_HF_STATIC_TINY_PATH": "$(location :hf_static_program[HfStaticTiny.pte])",
+        "ET_HF_STATIC_TINY_HALF_PATH": "$(location :hf_static_program[HfStaticTinyHalf.pte])",
+        "ET_HF_STATIC_TINY_STATE_PATH": "$(location :hf_static_program[HfStaticTinyWithState.pte])",
+    },
+)
