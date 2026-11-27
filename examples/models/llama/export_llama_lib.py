@@ -1432,6 +1432,7 @@ def _to_edge_and_lower_llama_arm(
         partitioners.append(get_tosa_partitioner(llm_config.backend.tosa.version))
         modelname = f"tosa_{modelname}"
 
+    builder_exported.generate_etrecord = llm_config.debug.generate_etrecord
     builder = builder_exported.pt2e_quantize(quantizers)
     if (
         llm_config.backend.vgf.enabled
