@@ -6014,6 +6014,48 @@ for _entry in _REDUCTION_OP_TESTS:
     globals()[_cls.__name__] = _cls
 
 
+# --- Reduce all axes with keepdim (dim=None, keepdim=True) ---
+
+
+class ReduceAllKeepdimModel(nn.Module):
+    def __init__(self, op_fn: Callable):
+        super().__init__()
+        self.op_fn = op_fn
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.op_fn(x, dim=None, keepdim=True)
+
+
+@register_test
+class ReduceAllKeepdimTest(OpTestCase):
+    name = "reduce_all_keepdim"
+    rtol = 1e-5
+    atol = 1e-5
+
+    _OPS = {"sum": (torch.sum, "SumNode"), "mean": (torch.mean, "MeanNode")}
+
+    def __init__(self, op: str = "sum", shape: Tuple[int, ...] = (4, 4)):
+        self.op = op
+        self.shape = shape
+        shape_str = "x".join(str(s) for s in shape)
+        self.name = f"reduce_all_keepdim_{op}_{shape_str}"
+        self.expected_node_counts = {self._OPS[op][1]: 1}
+
+    @classmethod
+    def get_test_configs(cls) -> List["ReduceAllKeepdimTest"]:
+        return [
+            cls(op=op, shape=shape)
+            for op in ("sum", "mean")
+            for shape in ((8,), (4, 4), (2, 3, 4))
+        ]
+
+    def create_model(self) -> nn.Module:
+        return ReduceAllKeepdimModel(self._OPS[self.op][0])
+
+    def create_inputs(self) -> Tuple[torch.Tensor, ...]:
+        return (torch.randn(self.shape),)
+
+
 # --- Global max (aten.max.default) - no dim argument ---
 
 
