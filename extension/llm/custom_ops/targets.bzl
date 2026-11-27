@@ -96,6 +96,13 @@ def define_common_targets():
     The directory containing this targets.bzl file should also contain both
     TARGETS and BUCK files that call this function.
     """
+    runtime.cxx_library(
+        name = "sdpa_row_exact",
+        srcs = ["op_sdpa_row_exact.cpp"],
+        exported_headers = ["op_sdpa_row_exact.h"],
+        visibility = ["PUBLIC"],
+    )
+
     for mkl_dep in ["", "_mkl_noomp"]:
         runtime.cxx_library(
             name = "custom_ops" + mkl_dep,
@@ -114,6 +121,7 @@ def define_common_targets():
                 _get_quantized_preproc_flags() +
                 _get_quantized_moe_preproc_flags(),
             exported_deps = [
+                ":sdpa_row_exact",
                 "//executorch/runtime/kernel:kernel_includes",
                 "//executorch/kernels/portable/cpu:scalar_utils",
                 "//executorch/kernels/optimized:libblas{}".format(mkl_dep),
@@ -179,6 +187,16 @@ def define_common_targets():
             "//executorch/runtime/core/exec_aten:lib",
             "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             "//executorch/kernels/test:test_util",
+            ":custom_ops",
+        ],
+    )
+
+    runtime.cxx_test(
+        name = "op_sdpa_row_exact_test",
+        srcs = ["op_sdpa_row_exact_test.cpp"],
+        visibility = ["//executorch/..."],
+        deps = [
+            "//executorch/runtime/core/exec_aten/testing_util:tensor_util",
             ":custom_ops",
         ],
     )
