@@ -49,7 +49,7 @@ def disable_grad():
 
 
 def run(
-    tmp_path, graph: xts3.XTS3Graph, offset: int, inputs, *options
+    tmp_path, graph: xts3.XTS3Graph, offset: int, inputs, *options, env=None
 ) -> tuple[list, dict]:
     blob = tmp_path / "graph.xts3"
     blob.write_bytes(xts3.serialize_graph(graph))
@@ -72,6 +72,7 @@ def run(
         ],
         capture_output=True,
         text=True,
+        env=None if env is None else {**os.environ, **env},
     )
     assert result.returncode == 0, result.stdout + result.stderr
     (stats,) = [line for line in result.stdout.splitlines() if line.startswith("STATS")]
@@ -81,8 +82,8 @@ def run(
     return outputs, dict(field.split("=") for field in stats.split()[1:])
 
 
-@pytest.mark.parametrize("version", [6, 7])
-def test_graph_at_any_alignment(tmp_path, version):
+def se_block(version: int):
+    """An XTS3 graph of the given version, random inputs and its outputs."""
     _, program = op_cases.quantize(lowering_cases.SEBlockModel(), [(1, 3, 16, 16)])
     graph = xts3.build_graph(program)
     graph.version = version
@@ -96,6 +97,12 @@ def test_graph_at_any_alignment(tmp_path, version):
     expected = [
         value.astype(np.int8).reshape(-1) for value in interpreter.run_outputs(inputs)
     ]
+    return graph, inputs, expected
+
+
+@pytest.mark.parametrize("version", [6, 7])
+def test_graph_at_any_alignment(tmp_path, version):
+    graph, inputs, expected = se_block(version)
     for offset in (0, 1, 2, 3, 4, 8):
         outputs, stats = run(tmp_path, graph, offset, inputs)
         for actual, wanted in zip(outputs, expected):
@@ -104,6 +111,34 @@ def test_graph_at_any_alignment(tmp_path, version):
         assert stats["blob_copied"] == ("0" if offset == 0 else "1")
         # Version 7 graphs keep their requantization parameters in place.
         assert (stats["parameters"] == "0") == (version == 7)
+
+
+@pytest.mark.parametrize("version", [6, 7])
+def test_constants_copied_to_psram(tmp_path, version):
+    # In a build with a PSRAM stand-in the graph is copied there and the
+    # runner frees the original, so every table pointer must follow the copy.
+    graph, inputs, expected = se_block(version)
+    outputs, stats = run(tmp_path, graph, 0, inputs, "--constants-to-psram")
+    for actual, wanted in zip(outputs, expected):
+        np.testing.assert_array_equal(actual, wanted)
+    assert stats["blob_copied"] == stats["psram"]
+
+
+def test_arena_gets_internal_ram_first(tmp_path):
+    # Internal RAM holds the arena, its 16 readable bytes past the end and the
+    # default 48 KiB reserve, but not the version 6 graph's requantization
+    # tables too. In a build with a PSRAM stand-in, allocating the tables
+    # first would push the arena out to PSRAM.
+    graph, inputs, expected = se_block(6)
+    _, stats = run(tmp_path, graph, 0, inputs)
+    limit = int(stats["arena"]) + 16 + 48 * 1024 + 1
+    outputs, stats = run(
+        tmp_path, graph, 0, inputs, env={"ESPNN_HOST_INTERNAL_BYTES": str(limit)}
+    )
+    for actual, wanted in zip(outputs, expected):
+        np.testing.assert_array_equal(actual, wanted)
+    assert int(stats["parameters"]) > 0
+    assert stats["arena_internal"] == "1"
 
 
 def test_partial_copy_does_not_leak_into_a_bound_output(tmp_path):

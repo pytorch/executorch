@@ -12,6 +12,13 @@
 
 include(${CMAKE_CURRENT_LIST_DIR}/../../esp_nn_sources.cmake)
 option(ESPNN_HOST_OPTIMIZED "Use esp-nn's generic optimized C kernels" OFF)
+option(ESPNN_HOST_PSRAM "Serve PSRAM allocations from the host heap" OFF)
+option(ESPNN_HOST_SCRATCH "Make the kernels request and fill ESP-NN scratch"
+       OFF
+)
+option(ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
+       "Copy weights into PSRAM; needs ESPNN_HOST_PSRAM" OFF
+)
 option(ESPNN_DELEGATE_PROFILE "Time every delegate operator" OFF)
 option(ESPNN_DELEGATE_SCRATCH_IN_ARENA
        "Plan ESP-NN scratch in the activation arena" OFF
@@ -51,7 +58,15 @@ target_include_directories(
 target_compile_definitions(
   espnn_backend PRIVATE C10_USING_CUSTOM_GENERATED_MACROS
 )
-foreach(option ESPNN_DELEGATE_PROFILE ESPNN_DELEGATE_SCRATCH_IN_ARENA)
+if(ESPNN_HOST_PSRAM)
+  target_compile_definitions(espnn_backend PUBLIC ESPNN_HOST_PSRAM=1)
+endif()
+if(ESPNN_HOST_SCRATCH)
+  target_compile_definitions(espnn_backend PRIVATE ESPNN_HOST_SCRATCH=1)
+endif()
+foreach(option ESPNN_DELEGATE_CONSTANTS_TO_PSRAM ESPNN_DELEGATE_PROFILE
+               ESPNN_DELEGATE_SCRATCH_IN_ARENA
+)
   if(${option})
     target_compile_definitions(espnn_backend PRIVATE CONFIG_${option}=1)
   endif()

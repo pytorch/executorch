@@ -46,8 +46,12 @@ from executorch.backends.espressif.test.test_mutable_buffers import (
     InputAsState,
     lower_input_as_state,
     lower_stateful,
+    ReturnsClonedOldState,
+    ReturnsOldState,
     ShiftRegister,
+    split_streams,
     StateReadLate,
+    TwoStreams,
 )
 from executorch.exir import ExecutorchBackendConfig
 from executorch.exir.backend.compile_spec_schema import CompileSpec
@@ -170,21 +174,25 @@ def from_bytes(data: bytes, like: torch.Tensor, channels_last: bool) -> torch.Te
     return tensor.permute(0, 3, 1, 2) if channels_last else tensor
 
 
-def run_host(tmp_path: Path, program: bytes, steps, *args):
-    """
-    Runs one list of input tensors per step. Returns the output files per
-    instance and step, and the delegates' memory statistics.
-    """
+def run_runner(tmp_path: Path, program: bytes, steps, *args):
     (tmp_path / "program.pte").write_bytes(program)
     for step, inputs in enumerate(steps):
         for i, tensor in enumerate(inputs):
             (tmp_path / f"in_{step}_{i}.bin").write_bytes(to_bytes(tensor))
-    result = subprocess.run(
+    return subprocess.run(
         [RUNNER, str(tmp_path / "program.pte"), str(tmp_path), str(len(steps))]
         + [str(arg) for arg in args],
         capture_output=True,
         text=True,
     )
+
+
+def run_host(tmp_path: Path, program: bytes, steps, *args):
+    """
+    Runs one list of input tensors per step. Returns the output files per
+    instance and step, and the delegates' memory statistics.
+    """
+    result = run_runner(tmp_path, program, steps, *args)
     assert result.returncode == 0, result.stdout + result.stderr
     (stats_line,) = [
         line for line in result.stdout.splitlines() if line.startswith("STATS ")
@@ -214,6 +222,11 @@ def assert_matches(
             torch.testing.assert_close(actual, tensor, atol=1e-5, rtol=1e-5)
         else:
             assert torch.equal(actual, tensor)
+
+
+def arena_holds_plan(stats, planned: int) -> bool:
+    """Whether the arena is the planned size, plus any ESP-NN scratch in it."""
+    return stats["arena"] == planned if stats["scratch"] else stats["arena"] >= planned
 
 
 def random_steps(shapes, count: int, seed: int = 11):
@@ -297,7 +310,9 @@ def test_conversion_buffers_share_the_arena(
     buffer = edge.to_executorch(config).buffer
     _, loaded = run_host(tmp_path, buffer, [])
     assert loaded["arena"] == arena_slots * sample.numel()
-    assert loaded["staging"] == 0
+    # The staging buffer, allocated at init, covers outputs outside the arena.
+    bound = output_int8 and channels_last and not legacy
+    assert loaded["staging"] == ((sample.numel() + 15) // 16 * 16 if bound else 0)
     steps = random_steps([shape], 2)
     steps = [
         [
@@ -312,7 +327,7 @@ def test_conversion_buffers_share_the_arena(
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), channels_last)
     assert stats["arena"] == loaded["arena"]
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
 
 
 def test_partitions_keep_independent_conversion_plans(tmp_path):
@@ -327,7 +342,7 @@ def test_partitions_keep_independent_conversion_plans(tmp_path):
     assert stats["delegates"] == 2
     # Inputs are always copied; both partitions' outputs need conversion.
     assert stats["arena"] == 32 + 32
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
 
 
 def test_inputs_are_copied_for_exports_that_bound_them(tmp_path):
@@ -368,7 +383,7 @@ def test_inputs_are_copied_for_exports_that_bound_them(tmp_path):
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), True)
     assert stats["arena"] == 2 * sample.numel()
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
 
 
 def test_instances_run_independently(tmp_path):
@@ -394,6 +409,17 @@ def test_unplanned_io_shared_with_the_caller(tmp_path):
     emulator = ProgramEmulator(exported)
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
+
+
+def test_output_without_memory_is_rejected(tmp_path):
+    model, shapes = lowering_cases.ConvActModel(), [(1, 3, 16, 16)]
+    _, program = lower(model, shapes, alloc_graph_output=False)
+    result = run_runner(
+        tmp_path, program, random_steps(shapes, 1), "--unbound-output", 0
+    )
+    assert result.returncode != 0
+    assert "output 0 has no data" in result.stdout
+    assert "execute (18)" in result.stderr  # Error::InvalidArgument
 
 
 def test_version_6_graphs_still_run(tmp_path):
@@ -547,11 +573,14 @@ def test_device_layout_io_is_used_in_place(tmp_path, channels_last):
         assert_matches(outputs[step], as_list(emulator(*inputs)), channels_last)
     # Inputs and NCHW outputs use the arena; channels-last outputs are bound
     # directly.
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
     if channels_last:
-        assert stats["arena"] == sum(
-            reference.plan_activation_arena(delegate.graph, external_io=True)[0]
-            for delegate in emulator.delegates.values()
+        assert arena_holds_plan(
+            stats,
+            sum(
+                reference.plan_activation_arena(delegate.graph, external_io=True)[0]
+                for delegate in emulator.delegates.values()
+            ),
         )
 
 
@@ -600,10 +629,13 @@ def test_misaligned_buffers_are_staged(tmp_path):
     exported, program, _ = lower_streaming(channels_last=True)
     emulator = ProgramEmulator(exported)
     steps = int8_steps(2, channels_last=True)
+    _, loaded = run_host(tmp_path, program, [], "--share-io", "--misalign")
     (outputs,), stats = run_host(tmp_path, program, steps, "--share-io", "--misalign")
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)), True)
-    assert stats["staging"] > 0
+    # Staged through the buffer allocated at init; execute() allocates nothing.
+    assert stats["staged"] > 0
+    assert stats["staging"] == loaded["staging"] > 0
 
 
 @pytest.mark.parametrize("channels_last", [False, True])
@@ -619,11 +651,14 @@ def test_outputs_read_by_operators_keep_their_slots(tmp_path, channels_last):
     for step, inputs in enumerate(steps):
         expected = as_list(emulator(*inputs))
         assert_matches(outputs[step][2:], expected[2:], channels_last)
-    assert stats["staging"] == 0
+    assert stats["staged"] == 0
     if channels_last:
-        assert stats["arena"] == sum(
-            reference.plan_activation_arena(delegate.graph, external_io=True)[0]
-            for delegate in emulator.delegates.values()
+        assert arena_holds_plan(
+            stats,
+            sum(
+                reference.plan_activation_arena(delegate.graph, external_io=True)[0]
+                for delegate in emulator.delegates.values()
+            ),
         )
 
 
@@ -692,6 +727,17 @@ def test_state_updated_from_a_graph_input(tmp_path):
     assert stats["states"] == 1
 
 
+@pytest.mark.parametrize("model_class", [ReturnsOldState, ReturnsClonedOldState])
+def test_returned_old_state(tmp_path, model_class):
+    exported, program, _ = lower_input_as_state(model_class)
+    steps = stateful_steps(4)
+    (outputs,), stats = run_host(tmp_path, program, steps)
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["states"] == 1
+
+
 def test_state_reset_and_instances(tmp_path):
     exported, program, _ = lower_stateful(ShiftRegister())
     steps = stateful_steps(6)
@@ -705,6 +751,42 @@ def test_state_reset_and_instances(tmp_path):
         expected = as_list(emulator(*inputs))
         assert_matches(first[step], expected)
         assert_matches(second[step], expected)
+
+
+def test_state_reset_by_group(tmp_path):
+    # Instance k is in reset group k, and only group 1 is reset.
+    exported, program, _ = lower_stateful(ShiftRegister())
+    steps = stateful_steps(6)
+    kept, reset = run_host(
+        tmp_path,
+        program,
+        steps,
+        "--instances",
+        2,
+        "--reset-groups",
+        "--reset-before",
+        "3:1",
+    )[0]
+    continuous, restarted = ProgramEmulator(exported), ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        if step == 3:
+            restarted.reset_states()
+        assert_matches(kept[step], as_list(continuous(*inputs)))
+        assert_matches(reset[step], as_list(restarted(*inputs)))
+
+
+def test_state_in_two_partitions_stays_in_the_program(tmp_path, monkeypatch):
+    split_streams(monkeypatch)
+    exported, program, report = lower_stateful(
+        TwoStreams(), inputs=2, allow_cpu_fallback=True
+    )
+    assert report["partitions"] == 2 and not report["delegated_buffers"]
+    steps = random_steps([(1, 4, 1, 1)] * 2, 5)
+    (outputs,), stats = run_host(tmp_path, program, steps)
+    emulator = ProgramEmulator(exported)
+    for step, inputs in enumerate(steps):
+        assert_matches(outputs[step], as_list(emulator(*inputs)))
+    assert stats["delegates"] == 2 and stats["states"] == 0
 
 
 def test_streaming_example_runs_without_copies(tmp_path):
@@ -730,4 +812,4 @@ def test_streaming_example_runs_without_copies(tmp_path):
     emulator = ProgramEmulator(edge.exported_program())
     for step, inputs in enumerate(steps):
         assert_matches(outputs[step], as_list(emulator(*inputs)))
-    assert stats["states"] == 2 and stats["staging"] == 0
+    assert stats["states"] == 2 and stats["staged"] == 0

@@ -188,9 +188,11 @@ def _wide_graph(opcode, width, params, weight=False):
     return xts3.serialize_graph(graph)
 
 
-def test_parser_rejects_outputs_wider_than_esp_nn_supports(parser):
+def test_parser_rejects_outputs_wider_than_esp_nn_supports(parser, monkeypatch):
     # ESP-NN's pooling and convolution kernels take uint16_t dimensions: a
-    # (1, 2) window with padding (0, 1) widens 65535 to 65536.
+    # (1, 2) window with padding (0, 1) widens 65535 to 65536. The serializer
+    # refuses such graphs too, so its check is skipped to build them.
+    monkeypatch.setattr(xts3, "check_runtime_limits", lambda graph: None)
     pool = struct.pack(xts3.INT8_POOL_PARAMS, 1, 2, 1, 1, 0, 1, 1, 1, -128, 127)
     conv = struct.pack(
         xts3.INT8_CONV_BASE_PARAMS, 1, 2, 1, 1, 0, 1, 1, 1, 1, -128, 127

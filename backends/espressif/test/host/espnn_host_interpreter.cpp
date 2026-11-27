@@ -12,12 +12,16 @@
  * Runs one XTS3 graph on Int8Interpreter directly, for
  * backends/espressif/test/test_host_interpreter.py:
  *
- *   espnn_host_interpreter GRAPH OFFSET [--external-io] INPUT... -- OUTPUT...
+ *   espnn_host_interpreter GRAPH OFFSET [--constants-to-psram] [--external-io]
+ *                          INPUT... -- OUTPUT...
  *
  * The graph is placed OFFSET bytes past a 16-byte boundary, so that a test can
  * load it from addresses with any alignment. Inputs and outputs are raw
- * device-layout (NHWC) int8 files. With --external-io, outputs are bound to
- * runner buffers prefilled with 0x5a.
+ * device-layout (NHWC) int8 files. --constants-to-psram sets
+ * Int8RuntimeOptions::copy_constants_to_psram. When the interpreter copies the
+ * graph, the runner frees its own copy, as EspNNBackend does. With
+ * --external-io, outputs are bound to 16-byte aligned runner buffers prefilled
+ * with 0x5a, after checking that a misaligned buffer is refused.
  */
 
 #include <cstdint>
@@ -67,6 +71,8 @@ int main(int argc, char** argv) {
   for (int a = 3; a < argc; ++a) {
     if (std::strcmp(argv[a], "--") == 0)
       past_separator = true;
+    else if (std::strcmp(argv[a], "--constants-to-psram") == 0)
+      options.copy_constants_to_psram = true;
     else if (std::strcmp(argv[a], "--external-io") == 0)
       options.external_io = true;
     else
@@ -82,6 +88,10 @@ int main(int argc, char** argv) {
   Int8Interpreter interpreter;
   if (!interpreter.load(base + offset, graph.size(), options))
     return fail("load failed");
+  if (interpreter.constants_copied()) {
+    storage.clear();
+    storage.shrink_to_fit();
+  }
   if (inputs.size() != interpreter.input_count() ||
       outputs.size() != interpreter.output_count())
     return fail("wrong number of inputs or outputs");
@@ -89,10 +99,13 @@ int main(int argc, char** argv) {
   for (size_t o = 0; options.external_io && o < bound.size(); ++o) {
     Int8TensorInfo info{};
     interpreter.output_info(o, info);
-    bound[o].resize(info.bytes / 8 + 2);
+    bound[o].resize(info.bytes / 8 + 3);
     int8_t* buffer = reinterpret_cast<int8_t*>(bound[o].data());
+    buffer += (16 - reinterpret_cast<uintptr_t>(buffer) % 16) % 16;
     std::memset(buffer, 0x5a, info.bytes);
-    interpreter.bind_output(o, buffer);
+    if (interpreter.bind_output(o, buffer + 1) ||
+        !interpreter.bind_output(o, buffer))
+      return fail("bound a misaligned output or refused an aligned one");
   }
   for (size_t i = 0; i < inputs.size(); ++i) {
     Int8TensorInfo info{};
@@ -114,9 +127,18 @@ int main(int argc, char** argv) {
       return fail(std::string("cannot write ") + outputs[o]);
     std::fclose(file);
   }
+#ifdef ESPNN_HOST_PSRAM
+  const int psram = 1;
+#else
+  const int psram = 0;
+#endif
   std::printf(
-      "STATS parameters=%zu blob_copied=%d\n",
+      "STATS arena=%zu arena_internal=%d parameters=%zu blob_copied=%d "
+      "psram=%d\n",
+      interpreter.arena_bytes(),
+      interpreter.arena_in_internal_ram() ? 1 : 0,
       interpreter.parameter_bytes(),
-      interpreter.constants_copied() ? 1 : 0);
+      interpreter.constants_copied() ? 1 : 0,
+      psram);
   return 0;
 }

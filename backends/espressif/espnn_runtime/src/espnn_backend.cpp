@@ -53,9 +53,9 @@ namespace espressif {
 namespace {
 
 DelegateStats g_stats{};
-// Incremented by each reset request; a delegate whose state is older restores
-// its initial state before its next execute.
-std::atomic<uint32_t> g_state_generation{0};
+// Incremented by each reset of a group; a delegate whose state is older than
+// its group restores its initial state before its next execute.
+std::atomic<uint32_t> g_state_generations[kResetGroups]{};
 
 constexpr float kHalfEvenRoundingBias = 12582912.0f;
 
@@ -108,10 +108,12 @@ Layout tensor_layout(const Tensor& tensor, const Int8TensorInfo& info) {
   return Layout::kInvalid;
 }
 
-// The kernels may rely on the activation arena's 16-byte alignment, so only
-// buffers aligned like it are used in place.
-bool arena_aligned(const void* data) {
-  return reinterpret_cast<uintptr_t>(data) % 16 == 0;
+Error missing_data(const char* kind, size_t index) {
+  std::printf(
+      "EspNN delegate: %s %u has no data\n",
+      kind,
+      static_cast<unsigned>(index));
+  return Error::InvalidArgument;
 }
 
 bool load_input(
@@ -200,8 +202,10 @@ struct DelegateState {
   Int8Interpreter interpreter;
   uint32_t conversion_slots = 0;
   bool profiled = false;
+  int reset_group = 0;
   uint32_t state_generation = 0;
-  // Copies of misaligned outputs that are not in the arena.
+  // Copies of outputs outside the arena whose memory is misaligned, in output
+  // order.
   int8_t* staging = nullptr;
 
   ~DelegateState() {
@@ -209,41 +213,68 @@ struct DelegateState {
       heap_caps_free(staging);
   }
 
-  int8_t* staging_slot(size_t slot) {
+  // A graph tensor returned more than once is written where its first
+  // output is bound, and a graph input returned as an output stays where
+  // the input is bound; both are copied to their outputs afterwards.
+  bool returned_again(size_t o) const {
+    Int8TensorInfo info{};
+    Int8TensorInfo other{};
+    if (!interpreter.output_info(o, info))
+      return false;
+    for (size_t earlier = 0; earlier < o; ++earlier) {
+      if (interpreter.output_info(earlier, other) &&
+          other.tensor_id == info.tensor_id)
+        return true;
+    }
+    for (size_t i = 0; i < interpreter.input_count(); ++i) {
+      if (interpreter.input_info(i, other) && other.tensor_id == info.tensor_id)
+        return true;
+    }
+    return false;
+  }
+
+  // Offset of output end's staging copy, the staging buffer's size for
+  // end = output_count(), or SIZE_MAX if that overflows.
+  size_t staging_offset(size_t end) const {
     const size_t inputs = interpreter.input_count();
-    const size_t slots = inputs + interpreter.output_count();
-    size_t offset = 0;
     size_t total = 0;
-    for (size_t k = inputs; k < slots; ++k) {
-      if ((conversion_slots & (1U << k)) != 0)
-        continue;
+    for (size_t o = 0; o < end; ++o) {
       Int8TensorInfo info{};
-      if (!interpreter.output_info(k - inputs, info))
-        return nullptr;
-      if (k == slot)
-        offset = total;
-      const size_t bytes = (info.bytes + 15) & ~static_cast<size_t>(15);
-      if (info.bytes > SIZE_MAX - 15 || bytes > SIZE_MAX - total)
-        return nullptr;
-      total += bytes;
+      if ((conversion_slots & (1U << (inputs + o))) != 0 || returned_again(o) ||
+          !interpreter.output_info(o, info))
+        continue;
+      if (info.bytes > SIZE_MAX - 15 - total)
+        return SIZE_MAX;
+      total += (info.bytes + 15) & ~static_cast<size_t>(15);
     }
-    if (staging == nullptr) {
-      staging = static_cast<int8_t*>(heap_caps_aligned_alloc(
-          16, total, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
-      if (staging == nullptr) {
-        staging = static_cast<int8_t*>(
-            heap_caps_aligned_alloc(16, total, MALLOC_CAP_8BIT));
+    return total;
+  }
+
+  // Only misaligned outputs use the staging buffer, so it goes to PSRAM when
+  // there is any and leaves internal RAM to the arena.
+  bool allocate_staging() {
+    const size_t total = staging_offset(interpreter.output_count());
+    if (total == 0)
+      return true;
+    void* memory = nullptr;
+    if (total != SIZE_MAX) {
+      memory = heap_caps_aligned_alloc(
+          16, total, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      if (memory == nullptr) {
+        memory = heap_caps_aligned_alloc(
+            16, total, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
       }
-      if (staging == nullptr) {
-        std::printf(
-            "EspNN delegate: cannot allocate %u staging bytes\n",
-            static_cast<unsigned>(total));
-        return nullptr;
-      }
-      std::memset(staging, 0, total);
-      g_stats.staging_bytes += total;
     }
-    return staging + offset;
+    if (memory == nullptr) {
+      std::printf(
+          "EspNN delegate: cannot allocate %u staging bytes\n",
+          static_cast<unsigned>(total));
+      return false;
+    }
+    staging = static_cast<int8_t*>(memory);
+    std::memset(staging, 0, total);
+    g_stats.staging_bytes += total;
+    return true;
   }
 };
 
@@ -257,6 +288,16 @@ class EspNNBackendInterface final : public BackendInterface {
       BackendInitContext& context,
       FreeableBuffer* processed,
       ArrayRef<CompileSpec> compile_specs) const override {
+    const Result<int> group = context.get_runtime_spec<int>(kResetGroupOption);
+    const int reset_group = group.ok() ? group.get() : 0;
+    if ((!group.ok() && group.error() != Error::NotFound) || reset_group < 0 ||
+        reset_group >= kResetGroups) {
+      std::printf(
+          "EspNN delegate: %s must be an int from 0 to %d\n",
+          kResetGroupOption,
+          kResetGroups - 1);
+      return Error::InvalidArgument;
+    }
     Int8RuntimeOptions options{};
     for (const auto& spec : compile_specs) {
       if (std::strcmp(spec.key, "espnn_io_conversion_slots") == 0) {
@@ -272,6 +313,7 @@ class EspNNBackendInterface final : public BackendInterface {
     if (memory == nullptr)
       return Error::MemoryAllocationFailed;
     DelegateState* state = new (memory) DelegateState();
+    state->reset_group = reset_group;
 #if CONFIG_ESPNN_DELEGATE_CONSTANTS_TO_PSRAM
     options.copy_constants_to_psram = true;
 #endif
@@ -295,10 +337,14 @@ class EspNNBackendInterface final : public BackendInterface {
     state->conversion_slots = options.external_io
         ? state->interpreter.conversion_slots()
         : UINT32_MAX;
+    if (!state->allocate_staging()) {
+      state->~DelegateState();
+      return Error::MemoryAllocationFailed;
+    }
     if (state->interpreter.constants_copied())
       processed->Free();
     state->state_generation =
-        g_state_generation.load(std::memory_order_relaxed);
+        g_state_generations[reset_group].load(std::memory_order_relaxed);
     ++g_stats.delegates;
     g_stats.arena_bytes += state->interpreter.arena_bytes();
     g_stats.scratch_bytes += state->interpreter.scratch_bytes();
@@ -327,8 +373,8 @@ class EspNNBackendInterface final : public BackendInterface {
     }
     const int64_t started = esp_timer_get_time();
     if (interpreter.state_count() != 0) {
-      const uint32_t generation =
-          g_state_generation.load(std::memory_order_relaxed);
+      const uint32_t generation = g_state_generations[state->reset_group].load(
+          std::memory_order_relaxed);
       if (generation != state->state_generation) {
         interpreter.reset_states();
         state->state_generation = generation;
@@ -344,6 +390,9 @@ class EspNNBackendInterface final : public BackendInterface {
           args[i]->isTensor() && interpreter.input_info(i, info)
           ? tensor_layout(args[i]->toTensor(), info)
           : Layout::kInvalid;
+      if (layout != Layout::kInvalid &&
+          args[i]->toTensor().const_data_ptr() == nullptr)
+        return missing_data("input", i);
       const bool ok =
           layout != Layout::kInvalid &&
           load_input(
@@ -362,38 +411,24 @@ class EspNNBackendInterface final : public BackendInterface {
           ? tensor_layout(args[inputs + o]->toTensor(), info)
           : Layout::kInvalid;
       bool ok = layout != Layout::kInvalid;
+      if (ok && args[inputs + o]->toTensor().const_data_ptr() == nullptr)
+        return missing_data("output", o);
       if (ok && (state->conversion_slots & (1U << (inputs + o))) != 0) {
         staged_outputs |= 1U << o;
         continue;
       }
-      // A graph tensor returned more than once is written where its first
-      // output is bound, and a graph input returned as an output stays where
-      // the input is bound; both are copied to their outputs afterwards.
-      bool repeated = false;
-      for (size_t earlier = 0; ok && earlier < o; ++earlier) {
-        Int8TensorInfo first{};
-        interpreter.output_info(earlier, first);
-        repeated = repeated || first.tensor_id == info.tensor_id;
-      }
-      for (size_t i = 0; ok && i < inputs; ++i) {
-        Int8TensorInfo input{};
-        interpreter.input_info(i, input);
-        repeated = repeated || input.tensor_id == info.tensor_id;
-      }
-      if (ok && repeated) {
+      if (ok && state->returned_again(o)) {
         staged_outputs |= 1U << o;
       } else if (ok) {
+        // bind_output() refuses a misaligned buffer.
         Tensor tensor = args[inputs + o]->toTensor();
-        if (tensor.scalar_type() == ScalarType::Char &&
-            layout == Layout::kDevice &&
-            arena_aligned(tensor.const_data_ptr())) {
-          ok = interpreter.bind_output(o, tensor.mutable_data_ptr<int8_t>());
-        } else {
-          int8_t* slot = state->staging_slot(inputs + o);
-          if (slot == nullptr)
-            return Error::MemoryAllocationFailed;
-          ok = interpreter.bind_output(o, slot);
+        if (tensor.scalar_type() != ScalarType::Char ||
+            layout != Layout::kDevice ||
+            !interpreter.bind_output(o, tensor.mutable_data_ptr<int8_t>())) {
+          ok = interpreter.bind_output(
+              o, state->staging + state->staging_offset(o));
           staged_outputs |= 1U << o;
+          ++g_stats.staged_outputs;
         }
       }
       if (!ok) {
@@ -436,14 +471,23 @@ class EspNNBackendInterface final : public BackendInterface {
       BackendOptionContext&,
       const Span<BackendOption>& backend_options) override {
     for (const BackendOption& option : backend_options) {
-      const bool* value = std::get_if<bool>(&option.value);
-      if (std::strcmp(option.key, kResetStatesOption) != 0 ||
-          value == nullptr) {
+      if (std::strcmp(option.key, kResetStatesOption) != 0) {
         std::printf("EspNN delegate: unknown option %s\n", option.key);
         return Error::NotSupported;
       }
-      if (*value)
+      const bool* all = std::get_if<bool>(&option.value);
+      const int* group = std::get_if<int>(&option.value);
+      if (all != nullptr && *all) {
         reset_delegate_states();
+      } else if (
+          all == nullptr &&
+          (group == nullptr || !reset_delegate_states(*group))) {
+        std::printf(
+            "EspNN delegate: %s takes true or a reset group from 0 to %d\n",
+            kResetStatesOption,
+            kResetGroups - 1);
+        return Error::InvalidArgument;
+      }
     }
     return Error::Ok;
   }
@@ -477,7 +521,15 @@ DelegateStats delegate_stats() {
 }
 
 void reset_delegate_states() {
-  g_state_generation.fetch_add(1, std::memory_order_relaxed);
+  for (std::atomic<uint32_t>& generation : g_state_generations)
+    generation.fetch_add(1, std::memory_order_relaxed);
+}
+
+bool reset_delegate_states(int group) {
+  if (group < 0 || group >= kResetGroups)
+    return false;
+  g_state_generations[group].fetch_add(1, std::memory_order_relaxed);
+  return true;
 }
 
 } // namespace espressif

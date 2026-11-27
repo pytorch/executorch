@@ -43,7 +43,10 @@ from executorch.backends.espressif.serialization.xts3 import (  # noqa: E402
     MAX_GRAPH_OPERATIONS,
     TENSOR_FLAG_CONSTANT,
     XTS3DType,
+    XTS3Graph,
     XTS3OpCode,
+    XTS3Operation,
+    XTS3Tensor,
 )
 from executorch.backends.espressif.test.test_int8_ops import quantize  # noqa: E402
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (  # noqa: E402
@@ -173,6 +176,34 @@ def test_runtime_limits_reject_misaligned_int32_constants():
     ]
     with pytest.raises(ValueError, match="4-byte aligned"):
         check_runtime_limits(dataclasses.replace(graph, tensors=tensors))
+
+
+@pytest.mark.parametrize(
+    "opcode, shapes",
+    [
+        (XTS3OpCode.CONV2D, lambda n: [(1, n, 1, 1), (1, 1, 1, 1)]),
+        (XTS3OpCode.DEPTHWISE_CONV2D, lambda n: [(1, 1, 1, 1), (1, 1, n, 1)]),
+        (XTS3OpCode.MAX_POOL2D, lambda n: [(1, 1, 1, n - 1), (1, 1, 1, n)]),
+        (XTS3OpCode.AVG_POOL2D, lambda n: [(1, 1, n, 1), (1, 1, 1, 1)]),
+        (XTS3OpCode.LINEAR, lambda n: [(1, n), (1, n), (1, 1)]),
+    ],
+    ids=["conv", "depthwise", "max-pool", "avg-pool", "linear"],
+)
+def test_runtime_limits_follow_esp_nn_extents(opcode, shapes):
+    def graph(extent):
+        tensors = [
+            XTS3Tensor(k, shape, XTS3DType.INT8)
+            for k, shape in enumerate(shapes(extent))
+        ]
+        output = len(tensors) - 1
+        operation = XTS3Operation(0, opcode, list(range(output)), [output], b"")
+        return XTS3Graph(
+            tensors=tensors, operations=[operation], inputs=[0], outputs=[output]
+        )
+
+    check_runtime_limits(graph(65535))
+    with pytest.raises(ValueError, match="uint16_t"):
+        check_runtime_limits(graph(65536))
 
 
 class DropoutClassifier(nn.Module):

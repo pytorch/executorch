@@ -42,7 +42,7 @@ struct Int8RuntimeOptions {
   /// Internal RAM left free when deciding whether the arena fits there.
   size_t internal_reserve_bytes = 48 * 1024;
   /// Time every operation for op_time_us() and print_profile(). Otherwise
-  /// invoke() reads the timer only a few times per call.
+  /// invoke() reads the timer only every few milliseconds.
   bool profile_operations = false;
   /// Plan each operation's ESP-NN scratch in the activation arena, live only
   /// while the operation runs, instead of one buffer sized for the largest
@@ -135,12 +135,13 @@ class Int8Interpreter {
   /**
    * With Int8RuntimeOptions::external_io, makes @p data, a device-layout
    * buffer of output_info().bytes, the storage of output @p index until it is
-   * bound again. An output with an arena slot cannot be bound: output_data()
-   * returns the slot.
+   * bound again. The buffer must be 16-byte aligned like the arena, since the
+   * kernels may rely on that. An output with an arena slot cannot be bound:
+   * output_data() returns the slot.
    *
-   * @retval false external_io is off, @p index is out of range, or the output
-   *     has an arena slot (it is a graph input, an operation reads it, or
-   *     conversion_slots selects it).
+   * @retval false external_io is off, @p index is out of range, @p data is
+   *     null or misaligned, or the output has an arena slot (it is a graph
+   *     input, an operation reads it, or conversion_slots selects it).
    */
   bool bind_output(size_t index, int8_t* data);
   /// Device-layout (NHWC) int8 buffer of input @p index, or nullptr.
@@ -241,6 +242,7 @@ class Int8Interpreter {
 
   bool plan_memory();
   bool prepare_operations();
+  bool allocate_operation_buffers();
   void rebase_constants(const uint8_t* old_base, size_t size);
   bool tensor_info(uint32_t tensor_id, Int8TensorInfo& info) const;
   int8_t* activation(uint32_t tensor_id) const;

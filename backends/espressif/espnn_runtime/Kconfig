@@ -34,6 +34,6 @@ menu "ExecuTorch ESP-NN backend"
         help
             Times every operator, which adds a timer read per operator to
             each execute. Without it, the delegate reads the timer only
-            every few operators, for its cooperative yield.
+            every few milliseconds, for its cooperative yield.
 
 endmenu

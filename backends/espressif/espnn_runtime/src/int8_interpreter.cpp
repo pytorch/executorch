@@ -16,6 +16,7 @@
 #include <cstring>
 #include <new>
 
+#include <esp_cpu.h>
 #include <esp_heap_caps.h>
 #include <esp_nn.h>
 #include <esp_nn_multicore.h>
@@ -31,10 +32,10 @@ namespace {
 
 constexpr size_t ARENA_ALIGNMENT = 16;
 constexpr int64_t YIELD_INTERVAL_US = 1000000;
-// Without profiling, invoke() checks the yield deadline only every this many
-// operations and when it returns: one timer read costs as much as a small
-// operation.
-constexpr uint32_t YIELD_CHECK_OPERATIONS = 16;
+// Without profiling, invoke() reads the cycle counter, which takes a few
+// cycles, after every operation, and the timer, which costs as much as a small
+// operation, only once this many cycles (4 ms at 240 MHz) have passed.
+constexpr uint32_t YIELD_CHECK_CYCLES = 1U << 20;
 
 // Created by a static initializer rather than on first use, so that invoke()
 // needs no thread-safe static guard (and no C++ runtime support for one).
@@ -212,8 +213,8 @@ int8_t quantize_value(float value, float inverse_scale, int32_t zero_point) {
 } // namespace
 
 // Fields that no operation uses together share storage: the input list
-// (CONCAT, COPY) with the pooling parameters, and the convolution,
-// depthwise-convolution and add parameters with each other.
+// (CONCAT, COPY) with the pooling and convolution windows, and the
+// convolution, depthwise-convolution and add parameters with each other.
 struct Int8Interpreter::OpState {
   OpCode opcode;
   uint32_t input0;
@@ -394,8 +395,10 @@ bool Int8Interpreter::load(
     }
   }
 
-  // Operations first: the planner places each operation's ESP-NN scratch.
-  if (!prepare_operations() || !plan_memory()) {
+  // The planner places each operation's ESP-NN scratch, and the arena gets
+  // the first claim on internal RAM.
+  if (!prepare_operations() || !plan_memory() ||
+      !allocate_operation_buffers()) {
     reset();
     return false;
   }
@@ -662,16 +665,7 @@ bool Int8Interpreter::prepare_operations() {
     }
   }
   params_size_ = param_words * sizeof(int32_t);
-  if (params_size_ != 0) {
-    params_ = static_cast<int32_t*>(allocate_preferring_internal(
-        params_size_, true, options_.internal_reserve_bytes, nullptr));
-    if (params_ == nullptr) {
-      std::printf("ERROR: unable to allocate requantization tables\n");
-      return false;
-    }
-  }
 
-  int32_t* cursor = params_;
   size_t scratch_size = 0;
   auto require_scratch = [&scratch_size](OpState& state, int32_t needed) {
     if (needed <= 0)
@@ -681,31 +675,6 @@ bool Int8Interpreter::prepare_operations() {
       state.scratch_bytes = bytes;
     if (bytes > scratch_size)
       scratch_size = bytes;
-  };
-  auto bind_requantization = [this, &cursor](
-                                 OpState& state, const OperationRecord& op) {
-    const uint8_t* multipliers = nullptr;
-    const uint8_t* shifts = nullptr;
-    uint32_t channels = 0;
-    if (!requantization_arrays(
-            graph_, tensors_, op, multipliers, shifts, channels))
-      return false;
-    const int32_t* multipliers_in_place =
-        int32s_in_place(tables_in_place_, multipliers);
-    const int32_t* shifts_in_place = int32s_in_place(tables_in_place_, shifts);
-    if (multipliers_in_place != nullptr && shifts_in_place != nullptr) {
-      state.multipliers = const_cast<int32_t*>(multipliers_in_place);
-      state.shifts = const_cast<int32_t*>(shifts_in_place);
-      return true;
-    }
-    state.multipliers = cursor;
-    state.shifts = cursor + channels;
-    for (uint32_t c = 0; c < channels; ++c) {
-      state.multipliers[c] = read_le_i32(multipliers + c * 4);
-      state.shifts[c] = read_le_i32(shifts + c * 4);
-    }
-    cursor += 2U * channels;
-    return true;
   };
   for (uint32_t i = 0; i < op_count; ++i) {
     OperationRecord op{};
@@ -736,10 +705,6 @@ bool Int8Interpreter::prepare_operations() {
             tensor_constant_data(graph_, weight));
         state.bias = reinterpret_cast<const int32_t*>(
             tensor_constant_data(graph_, bias));
-        if (!bind_requantization(state, op))
-          return false;
-        state.quant.mult = state.multipliers;
-        state.quant.shift = state.shifts;
         state.input_dims = {input.shape[3], input.shape[2], input.shape[1], 1};
         state.output_dims = {
             output.shape[3], output.shape[2], output.shape[1], 1};
@@ -880,8 +845,6 @@ bool Int8Interpreter::prepare_operations() {
         state.dilation_w = read_le_i32(p + 36);
         state.value0 = read_le_i32(p + 44);
         state.value1 = read_le_i32(p + 48);
-        if (!bind_requantization(state, op))
-          return false;
         state.input_dims = {input.shape[3], input.shape[2], input.shape[1], 1};
         state.output_dims = {
             output.shape[3], output.shape[2], output.shape[1], 1};
@@ -921,14 +884,6 @@ bool Int8Interpreter::prepare_operations() {
         state.rows = static_cast<int32_t>(state.elements) / state.cols;
         break;
       case OpCode::SOFTMAX:
-        if (const int32_t* table = int32s_in_place(tables_in_place_, p)) {
-          state.multipliers = const_cast<int32_t*>(table);
-        } else {
-          state.multipliers = cursor;
-          for (int k = 0; k < 256; ++k)
-            state.multipliers[k] = static_cast<int32_t>(read_le_u32(p + 4 * k));
-          cursor += 256;
-        }
         state.cols = input.shape[1];
         state.rows = static_cast<int32_t>(state.elements) / state.cols;
         break;
@@ -960,8 +915,6 @@ bool Int8Interpreter::prepare_operations() {
             tensor_constant_data(graph_, bias));
         state.value0 = read_le_i32(p);
         state.value1 = read_le_i32(p + 4);
-        if (!bind_requantization(state, op))
-          return false;
         break;
       }
       default:
@@ -969,6 +922,59 @@ bool Int8Interpreter::prepare_operations() {
     }
   }
 
+  scratch_size_ = options_.scratch_in_arena ? 0 : scratch_size;
+  return true;
+}
+
+bool Int8Interpreter::allocate_operation_buffers() {
+  if (params_size_ != 0) {
+    params_ = static_cast<int32_t*>(allocate_preferring_internal(
+        params_size_, true, options_.internal_reserve_bytes, nullptr));
+    if (params_ == nullptr) {
+      std::printf("ERROR: unable to allocate requantization tables\n");
+      return false;
+    }
+  }
+  int32_t* cursor = params_;
+  for (uint32_t i = 0; i < graph_.header.num_operations; ++i) {
+    OperationRecord op{};
+    read_operation(graph_, i, op);
+    OpState& state = op_states_[i];
+    const uint8_t* multipliers = nullptr;
+    const uint8_t* shifts = nullptr;
+    uint32_t channels = 0;
+    if (requantization_arrays(
+            graph_, tensors_, op, multipliers, shifts, channels)) {
+      const int32_t* multipliers_in_place =
+          int32s_in_place(tables_in_place_, multipliers);
+      const int32_t* shifts_in_place =
+          int32s_in_place(tables_in_place_, shifts);
+      if (multipliers_in_place != nullptr && shifts_in_place != nullptr) {
+        state.multipliers = const_cast<int32_t*>(multipliers_in_place);
+        state.shifts = const_cast<int32_t*>(shifts_in_place);
+      } else {
+        state.multipliers = cursor;
+        state.shifts = cursor + channels;
+        for (uint32_t c = 0; c < channels; ++c) {
+          state.multipliers[c] = read_le_i32(multipliers + c * 4);
+          state.shifts[c] = read_le_i32(shifts + c * 4);
+        }
+        cursor += 2U * channels;
+      }
+      state.quant.mult = state.multipliers;
+      state.quant.shift = state.shifts;
+    } else if (state.opcode == OpCode::SOFTMAX) {
+      const uint8_t* p = graph_.parameter_data + op.parameter_offset;
+      if (const int32_t* table = int32s_in_place(tables_in_place_, p)) {
+        state.multipliers = const_cast<int32_t*>(table);
+      } else {
+        state.multipliers = cursor;
+        for (int k = 0; k < 256; ++k)
+          state.multipliers[k] = static_cast<int32_t>(read_le_u32(p + 4 * k));
+        cursor += 256;
+      }
+    }
+  }
   if (phase_bytes_ != 0) {
     phase_buffer_ = static_cast<int8_t*>(allocate_preferring_internal(
         phase_bytes_, true, options_.internal_reserve_bytes, nullptr));
@@ -979,7 +985,6 @@ bool Int8Interpreter::prepare_operations() {
       return false;
     }
   }
-  scratch_size_ = options_.scratch_in_arena ? 0 : scratch_size;
   if (scratch_size_ != 0) {
     scratch_ = allocate_preferring_internal(
         scratch_size_, true, options_.internal_reserve_bytes, nullptr);
@@ -1030,6 +1035,8 @@ int8_t* Int8Interpreter::activation(uint32_t tensor_id) const {
 
 bool Int8Interpreter::bind_output(size_t index, int8_t* data) {
   if (!loaded_ || !options_.external_io || index >= output_count_ ||
+      data == nullptr ||
+      reinterpret_cast<uintptr_t>(data) % ARENA_ALIGNMENT != 0 ||
       in_arena(tensor_data_[outputs_[index]]))
     return false;
   tensor_data_[outputs_[index]] = data;
@@ -1976,6 +1983,7 @@ bool Int8Interpreter::invoke() {
   const int64_t invoke_started = esp_timer_get_time();
   int64_t op_started = invoke_started;
   int64_t last_yield = invoke_started;
+  uint32_t last_check = esp_cpu_get_cycle_count();
   for (uint32_t i = 0; i < graph_.header.num_operations; ++i) {
     const OpState& state = op_states_[i];
     if (options_.scratch_in_arena && state.scratch_bytes != 0) {
@@ -1991,8 +1999,12 @@ bool Int8Interpreter::invoke() {
           opcode_name(op_states_[i].opcode));
       return false;
     }
-    if (op_us_ == nullptr && (i + 1) % YIELD_CHECK_OPERATIONS != 0)
-      continue;
+    if (op_us_ == nullptr) {
+      const uint32_t cycles = esp_cpu_get_cycle_count();
+      if (cycles - last_check < YIELD_CHECK_CYCLES)
+        continue;
+      last_check = cycles;
+    }
     int64_t now = esp_timer_get_time();
     if (op_us_ != nullptr)
       op_us_[i] = now - op_started;
