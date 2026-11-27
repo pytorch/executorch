@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -16,6 +17,9 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
+#include <limits>
+
 using namespace ::testing;
 using executorch::aten::ScalarType;
 using executorch::aten::Tensor;
@@ -30,6 +34,34 @@ class OpWhereOutTest : public OperatorTest {
       Tensor& out) {
     return torch::executor::aten::where_outf(
         context_, condition, self, other, out);
+  }
+
+  template <ScalarType DTYPE>
+  void test_row_condition() {
+    TensorFactory<ScalarType::Bool> tb;
+    TensorFactory<DTYPE> tf;
+    using CTYPE = typename TensorFactory<DTYPE>::ctype;
+    constexpr int32_t rows = 40;
+    constexpr int32_t columns = 1025;
+    std::vector<uint8_t> condition(rows);
+    std::vector<CTYPE> a(rows * columns), b(rows * columns), expected(a.size());
+    for (int32_t row = 0; row < rows; ++row) {
+      condition[row] = row % 3 == 0;
+      for (int32_t column = 0; column < columns; ++column) {
+        const auto index = row * columns + column;
+        a[index] = static_cast<CTYPE>(index % 17);
+        b[index] = static_cast<CTYPE>(index % 23);
+        expected[index] = condition[row] ? a[index] : b[index];
+      }
+    }
+    const std::vector<int32_t> sizes = {2, rows / 2, columns};
+    Tensor out = tf.zeros(sizes);
+    op_where_self_out(
+        tb.make({2, rows / 2, 1}, condition),
+        tf.make(sizes, a),
+        tf.make(sizes, b),
+        out);
+    EXPECT_TENSOR_EQ(out, tf.make(sizes, expected));
   }
 
   template <ScalarType DTYPE_A, ScalarType DTYPE_B, ScalarType DTYPE_OUT>
@@ -472,6 +504,103 @@ TEST_F(OpWhereOutTest, HalfSupport) {
 
   op_where_self_out(cond, a, b, out);
   EXPECT_TENSOR_CLOSE(out, tf.make({2, 3}, {1.5, 2.5, 1.5, 2.5, 1.5, 2.5}));
+}
+
+TEST_F(OpWhereOutTest, RowConditionBroadcast) {
+#define TEST_ROW_CONDITION(ctype, dtype) \
+  test_row_condition<ScalarType::dtype>();
+  ET_FORALL_REALHBBF16_TYPES(TEST_ROW_CONDITION)
+#undef TEST_ROW_CONDITION
+}
+
+TEST_F(OpWhereOutTest, RowConditionSpecialValues) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Float> tf;
+  const float nan = std::numeric_limits<float>::quiet_NaN();
+  const float inf = std::numeric_limits<float>::infinity();
+  Tensor a = tf.zeros({2, 5});
+  Tensor b =
+      tf.make({2, 5}, {nan, nan, nan, nan, nan, -0.0, inf, -inf, nan, 2});
+  Tensor out = tf.zeros({2, 5});
+
+  op_where_self_out(tb.make({2, 1}, {true, false}), a, b, out);
+
+  const auto* data = out.const_data_ptr<float>();
+  for (int i = 0; i < 5; ++i) {
+    EXPECT_EQ(data[i], 0);
+    EXPECT_FALSE(std::signbit(data[i]));
+  }
+  EXPECT_TRUE(std::signbit(data[5]));
+  EXPECT_EQ(data[6], inf);
+  EXPECT_EQ(data[7], -inf);
+  EXPECT_TRUE(std::isnan(data[8]));
+  EXPECT_EQ(data[9], 2);
+}
+
+TEST_F(OpWhereOutTest, ConditionBroadcastAcrossRows) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Float> tf;
+  Tensor out = tf.zeros({2, 2, 3});
+
+  op_where_self_out(
+      tb.make({1, 2, 1}, {true, false}),
+      tf.full({2, 2, 3}, 1),
+      tf.full({2, 2, 3}, 2),
+      out);
+
+  EXPECT_TENSOR_EQ(
+      out, tf.make({2, 2, 3}, {1, 1, 1, 2, 2, 2, 1, 1, 1, 2, 2, 2}));
+}
+
+TEST_F(OpWhereOutTest, RowConditionEmptyLastDimension) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Float> tf;
+  Tensor out = tf.zeros({2, 0});
+
+  op_where_self_out(
+      tb.make({2, 1}, {true, false}), tf.zeros({2, 0}), tf.zeros({2, 0}), out);
+
+  EXPECT_EQ(out.numel(), 0);
+}
+
+TEST_F(OpWhereOutTest, RowConditionBroadcastA) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Int> tf;
+  Tensor out = tf.zeros({2, 3});
+
+  op_where_self_out(
+      tb.make({2, 1}, {false, true}),
+      tf.make({2, 1}, {10, 20}),
+      tf.make({2, 3}, {1, 2, 3, 4, 5, 6}),
+      out);
+
+  EXPECT_TENSOR_EQ(out, tf.make({2, 3}, {1, 2, 3, 20, 20, 20}));
+}
+
+TEST_F(OpWhereOutTest, RowConditionChannelsLast) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Int> tf;
+  Tensor condition =
+      tb.channels_last_like(tb.make({1, 2, 1, 1}, {true, false}));
+  Tensor a = tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 3, 4}));
+  Tensor b = tf.channels_last_like(tf.make({1, 2, 1, 2}, {5, 6, 7, 8}));
+  Tensor out = tf.zeros_channels_last({1, 2, 1, 2});
+
+  op_where_self_out(condition, a, b, out);
+
+  EXPECT_TENSOR_EQ(
+      out, tf.channels_last_like(tf.make({1, 2, 1, 2}, {1, 2, 7, 8})));
+}
+
+TEST_F(OpWhereOutTest, RowConditionAliasedOutput) {
+  TensorFactory<ScalarType::Bool> tb;
+  TensorFactory<ScalarType::Int> tf;
+  Tensor a = tf.make({2, 3}, {1, 2, 3, 4, 5, 6});
+  Tensor b = tf.make({2, 3}, {7, 8, 9, 10, 11, 12});
+
+  op_where_self_out(tb.make({2, 1}, {true, false}), a, b, a);
+
+  EXPECT_TENSOR_EQ(a, tf.make({2, 3}, {1, 2, 3, 10, 11, 12}));
 }
 
 TEST_F(OpWhereOutTest, ChannelsLastBroadcast) {

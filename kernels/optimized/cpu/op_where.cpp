@@ -1,10 +1,13 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
  */
+#include <algorithm>
+
 #include <executorch/kernels/portable/cpu/util/elementwise_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
 #include <executorch/runtime/kernel/thread_parallel_interface.h>
@@ -47,11 +50,37 @@ Tensor& opt_where_out(
       // Using a Byte tensor for cond has been deprecated for a long time.
       cond.scalar_type() == ScalarType::Bool) {
     auto out_numel = out.numel();
+    bool row_condition = out.dim() > 0 && cond.dim() == out.dim() &&
+        cond.size(out.dim() - 1) == 1 && out.size(out.dim() - 1) > 1 &&
+        a.sizes().equals(out.sizes()) && b.sizes().equals(out.sizes()) &&
+        is_contiguous_dim_order(out.dim_order().data(), out.dim());
+    for (int64_t dim = 0; row_condition && dim < out.dim() - 1; ++dim) {
+      row_condition = cond.size(dim) == out.size(dim);
+    }
     ET_SWITCH_REALB_TYPES(compute_type, ctx, op_name, CTYPE_COMPUTE, [&]() {
       const CTYPE_COMPUTE* const data_a = a.const_data_ptr<CTYPE_COMPUTE>();
       const CTYPE_COMPUTE* const data_b = b.const_data_ptr<CTYPE_COMPUTE>();
       const bool* const data_cond = cond.const_data_ptr<bool>();
       CTYPE_COMPUTE* const data_out = out.mutable_data_ptr<CTYPE_COMPUTE>();
+      if (row_condition) {
+        const auto row_size = out.size(out.dim() - 1);
+        executorch::extension::parallel_for(
+            0,
+            cond.numel(),
+            std::max<int64_t>(
+                1, executorch::extension::internal::GRAIN_SIZE / row_size),
+            [&](const auto begin, const auto end) {
+              for (auto row = begin; row < end; ++row) {
+                const auto offset = row * row_size;
+                const auto* source =
+                    (data_cond[row] ? data_a : data_b) + offset;
+                if (source != data_out + offset) {
+                  std::copy_n(source, row_size, data_out + offset);
+                }
+              }
+            });
+        return;
+      }
       executorch::extension::parallel_for(
           0,
           out_numel,
