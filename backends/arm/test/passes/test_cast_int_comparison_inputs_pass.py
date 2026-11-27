@@ -160,6 +160,26 @@ def test_cast_int_comparison_inputs_int64(dtypes, casts) -> None:
     assert all(node.kwargs["dtype"] == torch.int64 for node in cast_nodes)
 
 
+@pytest.mark.parametrize("scalar_dtype", (torch.int16, torch.int32))
+def test_cast_int_comparison_inputs_wraps_zero_dim(scalar_dtype) -> None:
+    inputs = (
+        torch.tensor([1, -2, 3, 4], dtype=torch.int8),
+        torch.tensor(300, dtype=scalar_dtype),
+    )
+    pipeline = PassPipeline(
+        Comparison(operator.gt),
+        inputs,
+        tosa_extensions=["INT"],
+        pass_list=[CastIntComparisonInputsPass],
+    )
+    pipeline.run()
+
+    graph = pipeline.tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
+    cast_op = edge_ops.edge.dim_order_ops._to_dim_order_copy.default
+    wrapped = [n for n in graph.nodes if n.target == cast_op and n.args[0].name == "y"]
+    assert [n.kwargs["dtype"] for n in wrapped] == [torch.int8]
+
+
 @pytest.mark.parametrize("name", comparison_ops)
 @pytest.mark.parametrize("dtype", (torch.int8, torch.int16))
 def test_int_comparison_tosa_fp(name, dtype) -> None:

@@ -5,6 +5,7 @@
 
 from typing import Tuple
 
+import pytest
 import torch
 from executorch.backends.arm._passes import InsertInt32CastsAfterInt64PlaceholdersPass
 
@@ -12,6 +13,8 @@ from executorch.backends.arm.test.tester.test_pipeline import (
     PassPipeline,
     TosaPipelineINT,
 )
+from executorch.backends.test.harness.stages import StageType
+from executorch.exir.dialects._ops import ops as edge_ops
 
 input_t = Tuple[torch.Tensor, torch.Tensor]  # weights, indices
 input_t3 = Tuple[torch.Tensor, torch.LongTensor, torch.Tensor]
@@ -107,3 +110,50 @@ def test_insert_int32_casts_after_int64_placeholders_tosa_INT_upcast_for_index_c
         aten_op=UpcastToInt64ForIndexCopyModel.aten_ops,
     )
     pipeline.run()
+
+
+class Int64FloatModel(torch.nn.Module):
+    def __init__(self, op):
+        super().__init__()
+        self.op = op
+
+    def forward(self, x: torch.Tensor, y: torch.Tensor):
+        return self.op(x, y)
+
+
+int64_float_test_cases = {
+    "sub": (torch.sub, [torch.int32, torch.float32]),
+    "gt": (torch.gt, [torch.int32]),
+    "reciprocal": (lambda x, y: torch.reciprocal(x) + y, []),
+    "index_add": (lambda x, y: y.index_add(0, x, y), [torch.int32]),
+    "mul_gt": (lambda x, y: (x * 50000) > y, []),
+}
+
+
+@pytest.mark.parametrize("profiles", (["INT"], ["FP"]))
+@pytest.mark.parametrize(
+    ("op", "cast_dtypes"),
+    int64_float_test_cases.values(),
+    ids=int64_float_test_cases.keys(),
+)
+def test_insert_int32_casts_after_int64_placeholders_int64_float_operand(
+    op, cast_dtypes, profiles
+):
+    pipeline = PassPipeline[input_t](
+        Int64FloatModel(op),
+        (
+            torch.tensor([1, 2, 3, 0], dtype=torch.int64),
+            torch.tensor([0.5, 1.5, -2.5, 3.5]),
+        ),
+        quantize=True,
+        tosa_version="1.1",
+        tosa_extensions=profiles + ["int64"],
+        pass_list=[InsertInt32CastsAfterInt64PlaceholdersPass],
+    )
+    pipeline.pop_stage(-1)
+    pipeline.run()
+
+    graph = pipeline.tester.get_artifact(StageType.RUN_PASSES).exported_program().graph
+    cast_op = edge_ops.edge.dim_order_ops._to_dim_order_copy.default
+    casts = [node for node in graph.nodes if node.target == cast_op]
+    assert [node.kwargs["dtype"] for node in casts] == cast_dtypes

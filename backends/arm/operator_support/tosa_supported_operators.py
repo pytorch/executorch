@@ -255,9 +255,10 @@ def _is_quantized_constant(node: torch.fx.Node) -> bool:
 def _floating_profile_negative_checks(
     tosa_spec: TosaSpecification, reporter: WhyNoPartitionReporter
 ) -> list[OperatorSupportBase]:
+    int64 = tosa_spec.support_integer() and tosa_spec.support_extension("int64")
     return [
         CheckMixedFloatingInputs(reporter),
-        CheckFPComparisonInputs(reporter, tosa_spec.support_integer()),
+        CheckFPComparisonInputs(reporter, tosa_spec.support_integer(), int64),
     ]
 
 
@@ -1262,13 +1263,13 @@ def _can_handle_int64_operands(node: fx.Node) -> bool:
     if not dtypes <= {torch.int64, torch.int32, torch.int16, torch.int8, torch.bool}:
         return False
     if node.target == exir_ops.edge.dim_order_ops._to_dim_order_copy.default:
-        return True
+        return not node.meta["val"].is_floating_point()
     compute_dtype = get_compute_dtype(node)
     if compute_dtype == torch.int64:
         return True
-    if node.target in ZERO_DIM_NARROW_OPS:
+    if node.meta["val"].dtype == torch.bool or node.target in ZERO_DIM_NARROW_OPS:
         narrow_dtypes: tuple[torch.dtype, ...] = (torch.int8, torch.int16, torch.int32)
-    elif node.meta["val"].dtype == torch.bool or node.target in ZERO_DIM_INT32_OPS:
+    elif node.target in ZERO_DIM_INT32_OPS:
         narrow_dtypes = (torch.int32,)
     else:
         return False
@@ -1708,10 +1709,16 @@ class CheckFPComparisonInputs(OperatorSupportBase):
     integer_dtypes = {torch.bool, torch.int8, torch.int16, torch.int32}
 
     def __init__(
-        self, reporter: WhyNoPartitionReporter, int_supported: bool = False
+        self,
+        reporter: WhyNoPartitionReporter,
+        int_supported: bool = False,
+        int64_supported: bool = False,
     ) -> None:
         self.reporter = reporter
         self.int_supported = int_supported
+        self.int64_dtypes = (
+            self.integer_dtypes | {torch.int64} if int64_supported else set()
+        )
         super().__init__()
 
     def is_node_supported(
@@ -1739,6 +1746,10 @@ class CheckFPComparisonInputs(OperatorSupportBase):
             and node.target in self.comparison_ops
             and all(dtype in self.integer_dtypes for dtype in input_dtypes)
         ):
+            return True
+
+        dtypes = {get_compute_dtype(node), *input_dtypes}
+        if node.target in self.comparison_ops and dtypes <= self.int64_dtypes:
             return True
 
         if (

@@ -39,6 +39,7 @@ class LogicalBinary(torch.nn.Module):
             torch.randint(0, 2, (1, 10, 10, 10), dtype=torch.bool),
             torch.randint(0, 2, (1, 10, 10, 10), dtype=torch.bool),
         ),
+        "rank_mismatch": lambda: (torch.rand(2, 3) > 0.5, torch.tensor(True)),
     }
 
 

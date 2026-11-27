@@ -24,7 +24,10 @@ from executorch.backends.arm._passes.int32_range_analysis import (
     Int32RangeAnalysis,
     ValueRange,
 )
-from executorch.backends.arm.tosa.specification import TosaSpecification
+from executorch.backends.arm.tosa.specification import (
+    context_supports_int64,
+    TosaSpecification,
+)
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass, PassResult
 
@@ -492,6 +495,8 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
                 continue
 
             if node.target in self.aten_cast_ops + self.edge_cast_ops:
+                if context_supports_int64():
+                    continue
                 self._convert_casting_operators(node)
                 modified = True
             elif node.target in (
