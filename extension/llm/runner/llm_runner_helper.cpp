@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -297,7 +298,8 @@ std::unique_ptr<TextLLMRunner> create_text_llm_runner(
       io_manager.get(),
       prefill_method_name,
       std::move(sampler),
-      stats.get());
+      stats.get(),
+      metadata.at(kEnableDynamicShape));
 
   // The decode stage gets its own decoder runner when the PTE exports a
   // separate decode method; otherwise both stages share text_decoder_runner.

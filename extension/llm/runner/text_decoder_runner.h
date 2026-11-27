@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -27,7 +28,8 @@ class ET_EXPERIMENTAL TextDecoderRunner {
       IOManager* io_manager,
       std::string method_name = "forward",
       std::unique_ptr<Sampler> sampler = nullptr,
-      Stats* stats = nullptr);
+      Stats* stats = nullptr,
+      bool enable_dynamic_shape = true);
 
   virtual ~TextDecoderRunner() = default;
 
@@ -53,8 +55,28 @@ class ET_EXPERIMENTAL TextDecoderRunner {
           Error,
           "Failed to load method '%s'. Check available methods in the model.",
           method_name_.c_str());
+      return err;
     }
-    return err;
+    if (!enable_dynamic_shape_) {
+      auto meta = module_->method_meta(method_name_);
+      if (!meta.ok()) {
+        return meta.error();
+      }
+      if (meta->num_inputs() == 1) {
+        auto output = meta->output_tensor_meta(0);
+        if (!output.ok()) {
+          return output.error();
+        }
+        if (output->sizes().size() != 3) {
+          ET_LOG(
+              Error,
+              "Static non-KV models require full logits. "
+              "Export with --generate_full_logits.");
+          return ::executorch::runtime::Error::InvalidProgram;
+        }
+      }
+    }
+    return ::executorch::runtime::Error::Ok;
   }
 
   /**
@@ -106,6 +128,8 @@ class ET_EXPERIMENTAL TextDecoderRunner {
   std::string method_name_;
   std::unique_ptr<Sampler> sampler_;
   Stats* stats_;
+  bool enable_dynamic_shape_;
+  TensorPtr last_logits_;
 };
 
 } // namespace llm
