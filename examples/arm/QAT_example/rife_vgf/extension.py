@@ -206,15 +206,17 @@ class _SamplerQuantizationConfig(QuantizationConfig):
 
 def _register_pass_before(target_pass_type: type, pass_: ExportPass) -> None:
     existing_insertions = _registered_pass_insertions.get(target_pass_type)
-    if existing_insertions is not None and any(
-        isinstance(existing_pass, type(pass_))
-        for existing_pass in existing_insertions.before_passes
-    ):
-        return
+    if existing_insertions is not None:
+        for index, existing_pass in enumerate(existing_insertions.before_passes):
+            if type(existing_pass) is type(pass_):
+                existing_insertions.before_passes[index] = pass_
+                return
     register_pass_insertions_before(target_pass_type, [pass_])
 
 
-def configure_rife_vgf(partitioner: VgfPartitioner | None = None) -> None:
+def configure_rife_vgf(
+    partitioner: VgfPartitioner | None = None, *, precision=None
+) -> FuseRifeFinalWarpsPass:
     """Enable the Practical-RIFE warp-downsample VGF extension."""
     _ensure_warp_downsample_ops_registered()
     if partitioner is not None:
@@ -223,9 +225,11 @@ def configure_rife_vgf(partitioner: VgfPartitioner | None = None) -> None:
 
     _register_pass_before(RewriteConvPass, RewriteWarpDownsampleToTosaCustomPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, PackRifeWarpsAndConcatPass())
-    _register_pass_before(EnsureUniqueOutputNodesPass, FuseRifeFinalWarpsPass())
+    final_pass = FuseRifeFinalWarpsPass(precision=precision)
+    _register_pass_before(EnsureUniqueOutputNodesPass, final_pass)
     _register_pass_before(EnsureUniqueOutputNodesPass, PadRifeBlock0ConcatPass())
     _register_pass_before(EnsureUniqueOutputNodesPass, GroupWarpSamplerInputsPass())
+    return final_pass
 
 
 def configure_rife_vgf_quantizer(quantizer) -> None:

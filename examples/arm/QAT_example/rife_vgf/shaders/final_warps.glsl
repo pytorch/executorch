@@ -12,6 +12,8 @@ layout(set=0, binding=1) uniform sampler2D image1;
 layout(set=0, binding=2) readonly buffer PreviousFlow { uint previousFlow[]; };
 layout(set=0, binding=3) uniform tensorARM<int8_t, 4> tailPhase;
 #define FUSE_BLEND @FUSE_BLEND@
+#define FLOAT_TAIL @FLOAT_TAIL@
+@FLOAT_CONSTANTS@
 #define OUTPUT_UNSIGNED @OUTPUT_UNSIGNED@
 #if FUSE_BLEND
 #if OUTPUT_UNSIGNED
@@ -57,6 +59,18 @@ void main() {
   int8_t state[5];
   tensorReadARM(tailPhase, coords, state);
   uint previous = previousFlow[uint(p.y * size.x + p.x) * 8u + 6u];
+#if FLOAT_TAIL
+  float flows[4];
+  for (uint c=0u; c<4u; ++c) {
+    int code = int(previous << ((3u-c)*8u)) >> 24;
+    precise float left = (float(code) - PREVIOUS_ZERO_POINT) * PREVIOUS_SCALE;
+    precise float right = (float(state[c]) - DELTA_ZERO_POINT) * DELTA_SCALE;
+    precise float sum = left + right;
+    flows[c] = sum;
+  }
+  vec2 flow0 = vec2(flows[0], flows[1]);
+  vec2 flow1 = vec2(flows[2], flows[3]);
+#else
   int flowCodes[4];
   for (uint c=0u; c<4u; ++c) {
     int code = int(previous << ((3u-c)*8u)) >> 24;
@@ -64,6 +78,24 @@ void main() {
   }
   vec2 flow0 = (vec2(flowCodes[0], flowCodes[1]) - vec2(@FLOW_ZERO_POINT@)) * @FLOW_SCALE@;
   vec2 flow1 = (vec2(flowCodes[2], flowCodes[3]) - vec2(@FLOW_ZERO_POINT@)) * @FLOW_SCALE@;
+#endif
+#if FLOAT_TAIL
+  vec3 first = (texture(image0, uv(p, vec2(size), flow0)).rgb * 127.0 - vec3(@INPUT0_ZERO_POINT@)) * @INPUT0_SCALE@;
+  vec3 second = (texture(image1, uv(p, vec2(size), flow1)).rgb * 127.0 - vec3(@INPUT1_ZERO_POINT@)) * @INPUT1_SCALE@;
+  float alpha = FLOAT_SIGMOID[int(state[4]) + 128];
+  precise vec3 left = first * alpha;
+  precise vec3 right = second * (FLOAT_ONE - alpha);
+  precise vec3 result = left + right;
+  ivec3 codes = ivec3(clamp(roundEven(result * FINAL_INVERSE_SCALE) + vec3(FINAL_ZERO_POINT), vec3(-127.0), vec3(127.0)));
+  for (uint c=0u; c<3u; ++c) {
+    uint outputCoords[4] = uint[](0u, c, uint(p.y), uint(p.x));
+#if OUTPUT_UNSIGNED
+    tensorWriteARM(output0, outputCoords, uint8_t(clamp(rescaleToUint8(codes[c]), 0, 255)));
+#else
+    tensorWriteARM(output0, outputCoords, int8_t(codes[c]));
+#endif
+  }
+#else
   ivec4 image0Codes = quantizeSample(texture(image0, uv(p, vec2(size), flow0)) * 127.0,
       @INPUT0_SCALE@, @INPUT0_ZERO_POINT@, @OUTPUT0_SCALE@, @OUTPUT0_ZERO_POINT@);
   ivec4 image1Codes = quantizeSample(texture(image1, uv(p, vec2(size), flow1)) * 127.0,
@@ -88,5 +120,6 @@ void main() {
   imageStore(warped1, p, vec4(image1Codes) / 127.0);
   uint maskCoords[4] = uint[](0u, 0u, uint(p.y), uint(p.x));
   tensorWriteARM(mask, maskCoords, int8_t(SIGMOID_TABLE[int(state[4]) + 128]));
+#endif
 #endif
 }
