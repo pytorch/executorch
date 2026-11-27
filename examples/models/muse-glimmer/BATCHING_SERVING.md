@@ -411,6 +411,26 @@ reduce the context or slot counts if they do not fit.
 The cell pool tracks at most 64 resident sessions. Unlike on MLX, prefix snapshots
 clone a session's cells by reference, sharing the prompt's KV rather than copying it.
 
+To size a cell-layout export before building it, let `slots` be the sum of
+live sessions, retained prefix entries and resolved capture slots. The largest
+per-session context is the smaller of `--max-seq-len` and
+`floor((max_cells - 1) / slots)`. For a desired context of 131072 tokens,
+export at least `slots * 131072 + 1` cells and set `--max-seq-len 131072`.
+With four live sessions, eight retained prefixes and four capture slots, a
+131072-cell pool admits 8191 tokens per session. Serving 131072 tokens per
+session with those reservations would require 2097153 cells.
+
+For the 52-layer Muse-Glimmer-30B with two KV heads of width 128 and BF16 KV,
+each cell uses `52 * 2 * 2 * 128 * 2 = 53248` bytes (layers, K and V,
+KV heads, head width, bytes per element). The 2097153-cell pool alone would
+take about 104 GiB before weights, masks or workspace. For that geometry,
+consider exporting with `--kv-layout sequence --max-kv-seqs 16` instead.
+At `--max-seq-len 131072 --max-step-tokens 512`, its 13 global layers need
+131072 rows each and its 39 sliding-window layers need only
+`2048 + 512 - 1 = 2559` rows each. Including the padding column, the 17
+columns would use about 29.2 GiB of KV at full capacity. This is a storage
+estimate; allow additional device memory for weights and execution.
+
 For DFlash, export the tapped target and packed draft with
 `export_dflash --backend cuda --use-offgraph-kv-cache` (add `--draft-max-cells`
 and `--max-draft-owners`), then add `--dflash` to the serve command above. The
