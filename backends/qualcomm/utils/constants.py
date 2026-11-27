@@ -19,6 +19,14 @@ QCOM_BLOCK_SCALE_OFFSET = "block_scale_offset"
 QCOM_BLOCK_STORAGE_TYPE = "block_storage_type"
 QCOM_BYPASS_NODE = "bypass_node"
 QCOM_CONVERTED_LINEAR = "converted_linear"
+QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS = "custom_op_input_axis_orders"
+QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS = "custom_op_output_axis_orders"
+QCOM_FILTER_AXIS_ORDER_HWIO = (2, 3, 1, 0)
+QCOM_FILTER_AXIS_ORDER_HWOI = (2, 3, 0, 1)
+# Positional `node.args` indices whose tensors must not be baked as constants.
+QCOM_RUNTIME_INPUTS = "runtime_inputs"
+# Backend-computed boolean; integrations set QCOM_RUNTIME_INPUTS instead.
+QCOM_IS_RUNTIME_INPUT = "is_runtime_input"
 QCOM_DATA = "data"
 QCOM_DTYPE = "dtype"
 QCOM_ENCODING = "encoding"
@@ -38,6 +46,7 @@ QCOM_REQUANTIZE = "requantize"
 QCOM_SCALE = "scale"
 QCOM_SCALES = "scales"
 QCOM_SCALE_OFFSET = "scale_offset"
+QCOM_SKIP_REQUANT_ANNOTATION = "skip_requant_annotation"
 QCOM_TENSOR_NAME = "qnn_tensor_name"
 QCOM_ZERO_POINT = "zero_point"
 QCOM_ZERO_POINTS = "zero_points"

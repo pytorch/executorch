@@ -38,6 +38,12 @@ def test_annotate_quant_attrs(request, kwargs):
 
 @enumerate_backends_quantized()
 @repack_pass_fixtures
+def test_annotate_quant_attrs_skip_marked_requant(request, kwargs):
+    AnnotateQuantAttrsSkipMarkedRequant.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends_quantized()
+@repack_pass_fixtures
 def test_annotate_stack(request, kwargs):
     AnnotateStack.test(request, kwargs)  # noqa: F405
 
@@ -381,6 +387,12 @@ def test_insert_reshape_for_reduce_ops(request, kwargs):
 @repack_pass_fixtures
 def test_layout_transform(request, kwargs):
     LayoutTransform.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
+@repack_pass_fixtures
+def test_validate_runtime_conv_filter_layouts(request, kwargs):
+    ValidateRuntimeConvFilterLayouts.test(request, kwargs)  # noqa: F405
 
 
 @enumerate_backends()

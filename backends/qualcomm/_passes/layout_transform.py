@@ -8,9 +8,13 @@ from typing import List, Tuple
 
 import torch
 
-from executorch.backends.qualcomm.builders.utils import is_parameter
+from executorch.backends.qualcomm.builders.utils import (
+    get_custom_op_output_axis_order,
+    is_parameter,
+)
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
+    QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS,
     QCOM_INSERTED_PERMUTE,
     QCOM_LAYOUT_CHANGE,
     QCOM_QUANT_ATTRS,
@@ -194,6 +198,13 @@ class LayoutTransform(ExportPass):
         return node.target in self.layout_sensitive_ops
 
     def is_layout_agnostic(self, node: torch.fx.Node) -> bool:
+        if (
+            node.target is _operator.getitem
+            and isinstance(node.args[0], torch.fx.Node)
+            and QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS in node.args[0].meta
+        ):
+            # Tuple outputs need independent layout boundaries, not producer-wide tags.
+            return False
         if node.target in {
             exir_ops.edge.aten.max.dim,
             exir_ops.edge.aten.mean.dim,
@@ -224,6 +235,8 @@ class LayoutTransform(ExportPass):
                     and len(node.meta["val"].shape) == 0
                 ),
                 is_parameter(node, self.edge_program),
+                QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS in node.meta,
+                get_custom_op_output_axis_order(node) is not None,
             ]
         ):
             return True

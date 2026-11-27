@@ -35,10 +35,13 @@ from executorch.backends.qualcomm.utils.check_qnn_version import (
 )
 from executorch.backends.qualcomm.utils.constants import (
     QCOM_AXIS_ORDER,
+    QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS,
+    QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS,
     QCOM_PASS_ACTIVATE_KEY,
     QCOM_QUANT_ATTRS,
     QCOM_REQUANTIZE,
     QCOM_SCALE,
+    QCOM_SKIP_REQUANT_ANNOTATION,
     QCOM_ZERO_POINT,
 )
 from executorch.exir.delegate import executorch_call_delegate
@@ -236,6 +239,58 @@ class AnnotateQuantAttrs:
         assert (
             len(annotated) > 0
         ), "op nodes should have QCOM_QUANT_ATTRS after AnnotateQuantAttrs"
+
+
+class AnnotateQuantAttrsSkipMarkedRequant:
+    class _Basic(torch.nn.Module):
+        def forward(self, x):
+            quantized = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                x, 0.1, 0, -128, 127, torch.int8
+            )
+            dequantized = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                quantized, 0.1, 0, -128, 127, torch.int8
+            )
+            requantized = torch.ops.quantized_decomposed.quantize_per_tensor.default(
+                dequantized, 0.2, 0, -128, 127, torch.int8
+            )
+            output = torch.ops.quantized_decomposed.dequantize_per_tensor.default(
+                requantized, 0.2, 0, -128, 127, torch.int8
+            )
+            return torch.relu(output)
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+    ):
+        edge_program = pass_pipeline.lower_edge_ep(
+            module=AnnotateQuantAttrsSkipMarkedRequant._Basic(),
+            sample_input=(torch.randn(1, 4),),
+            backend_type=backend_type,
+            compile_spec=compile_spec,
+            target_pass=_passes.AnnotateQuantAttrs,
+            quantizer=None,
+        )
+        graph_module = edge_program.graph_module
+        quantize_node = next(
+            node
+            for node in graph_module.graph.nodes
+            if node.target in q_ops and node.args[0].target not in dq_ops
+        )
+        source_node = quantize_node.args[0]
+        assert source_node.meta.get(QCOM_REQUANTIZE)
+        assert QCOM_QUANT_ATTRS in source_node.meta
+
+        for node in graph_module.graph.nodes:
+            node.meta.pop(QCOM_REQUANTIZE, None)
+            node.meta.pop(QCOM_QUANT_ATTRS, None)
+        quantize_node.meta[QCOM_SKIP_REQUANT_ANNOTATION] = True
+        _passes.AnnotateQuantAttrs(edge_program)(graph_module)
+
+        assert QCOM_REQUANTIZE not in source_node.meta
+        assert QCOM_QUANT_ATTRS in source_node.meta
 
 
 class AnnotateStack:
@@ -4908,6 +4963,136 @@ class LayoutTransform:
             assert not any(
                 permute_node.args[0] is conv_backward for permute_node in permutes
             )
+
+
+class ValidateRuntimeConvFilterLayouts:
+    class _Conv(torch.nn.Module):
+        def __init__(self, fanout=False):
+            super().__init__()
+            self.fanout = fanout
+
+        def forward(self, x, weight):
+            spatial_rank = weight.dim() - 2
+            conv = torch.ops.aten.convolution.default(
+                x,
+                weight,
+                None,
+                [1] * spatial_rank,
+                [0] * spatial_rank,
+                [1] * spatial_rank,
+                False,
+                [0] * spatial_rank,
+                1,
+            )
+            return (conv, weight.sum()) if self.fanout else conv
+
+    class _OtherConsumer(torch.nn.Module):
+        def __init__(self, consumer):
+            super().__init__()
+            self.consumer = consumer
+
+        def forward(self, x):
+            if self.consumer == "input":
+                return torch.sin(torch.relu(x))
+            y = torch.sin(x)
+            return y + x if self.consumer == "add" else y
+
+    @staticmethod
+    @unpack_pass_fixtures
+    def test(
+        quantizer,
+        compile_spec,
+        backend_type: QnnExecuTorchBackendType,
+        pass_pipeline: PassPipeline,
+        subtests,
+    ):
+        conv_target = exir_ops.edge.aten.convolution.default
+
+        def lower_edge_graph(module, inputs):
+            return pass_pipeline.lower_edge_ep(
+                module=module,
+                sample_input=inputs,
+                backend_type=backend_type,
+                compile_spec=compile_spec,
+                target_pass=_passes.ValidateRuntimeConvFilterLayouts,
+                quantizer=None,
+            )
+
+        for consumer in ("add", "output", "input"):
+            with subtests.test(consumer=consumer):
+                exported = lower_edge_graph(
+                    ValidateRuntimeConvFilterLayouts._OtherConsumer(consumer),
+                    (torch.randn(2, 3),),
+                )
+                producer = next(
+                    node
+                    for node in exported.graph.nodes
+                    if node.target == exir_ops.edge.aten.sin.default
+                )
+                producer.meta[
+                    (
+                        QCOM_CUSTOM_OP_INPUT_AXIS_ORDERS
+                        if consumer == "input"
+                        else QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS
+                    )
+                ] = {0: (1, 0)}
+                error = (
+                    "requires a graph input"
+                    if consumer == "input"
+                    else "incompatible with consumer"
+                )
+                with pytest.raises(ValueError, match=error):
+                    _passes.ValidateRuntimeConvFilterLayouts()(exported.graph_module)
+
+        conv_inputs = (torch.randn(1, 3, 8, 8), torch.randn(4, 3, 3, 3))
+        conv = ValidateRuntimeConvFilterLayouts._Conv()
+        cases = (
+            ("unmarked_filter", conv, conv_inputs, None, None),
+            ("invalid_axis_order", conv, conv_inputs, (2, 3, 0, 1), "requires one of"),
+            (
+                "non_convolution_user",
+                ValidateRuntimeConvFilterLayouts._Conv(fanout=True),
+                conv_inputs,
+                (2, 3, 1, 0),
+                "incompatible with consumer",
+            ),
+            (
+                "rank_five",
+                conv,
+                (torch.randn(1, 3, 8, 8, 8), torch.randn(4, 3, 3, 3, 3)),
+                (2, 3, 4, 1, 0),
+                "must be rank 4; got 5",
+            ),
+            (
+                "quantized_filter",
+                conv,
+                conv_inputs,
+                (2, 3, 1, 0),
+                "must not be quantized",
+            ),
+        )
+        for name, module, inputs, axis_order, error in cases:
+            with subtests.test(msg=name):
+                edge_program = lower_edge_graph(module, inputs)
+                node = next(
+                    n for n in edge_program.graph.nodes if n.target == conv_target
+                )
+                filter_node = node.args[1]
+                if axis_order is not None:
+                    filter_node.meta[QCOM_CUSTOM_OP_OUTPUT_AXIS_ORDERS] = {
+                        0: axis_order
+                    }
+                if name == "quantized_filter":
+                    filter_node.meta[QCOM_QUANT_ATTRS] = {}
+                if error is None:
+                    _passes.ValidateRuntimeConvFilterLayouts()(
+                        edge_program.graph_module
+                    )
+                else:
+                    with pytest.raises(ValueError, match=error):
+                        _passes.ValidateRuntimeConvFilterLayouts()(
+                            edge_program.graph_module
+                        )
 
 
 class LiftConstantScalarOperands:

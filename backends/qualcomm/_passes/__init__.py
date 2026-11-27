@@ -76,6 +76,7 @@ from .replace_arange_args import ReplaceArangeArgs
 from .resolve_debug_handle import ResolveDebugHandle
 from .seq_mse import SeqMSE
 from .tag_quant_io import TagQuantIO
+from .validate_runtime_conv_filter_layouts import ValidateRuntimeConvFilterLayouts
 
 __all__ = [
     AnnotateAvgPool1D,
@@ -150,4 +151,5 @@ __all__ = [
     ResolveDebugHandle,
     SeqMSE,
     TagQuantIO,
+    ValidateRuntimeConvFilterLayouts,
 ]
