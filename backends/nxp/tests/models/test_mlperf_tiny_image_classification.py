@@ -38,9 +38,7 @@ def reseed_model_per_test_run():
 
 
 @pytest.mark.parametrize("channels_last", [False, True])
-def test_mlperf_tiny_classification_mse_cpu_vs_npu(
-    mocker, request, channels_last, use_qat
-):
+def test_ic_mse_cpu_vs_npu(mocker, request, channels_last, use_qat):
     num_samples = 1
 
     img_classification = MLPerfTinyImageClassification(
