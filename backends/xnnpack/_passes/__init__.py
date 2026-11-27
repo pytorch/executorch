@@ -29,9 +29,6 @@ from executorch.backends.xnnpack._passes.decompose_cat import DecomposeConcatena
 from executorch.backends.xnnpack._passes.decompose_conv_transpose import (
     DecomposeConvTransposePass,
 )
-from executorch.backends.xnnpack._passes.decompose_depthwise_conv_transpose import (
-    DecomposeDepthwiseConvTransposePass,
-)
 from executorch.backends.xnnpack._passes.fold_computed_params import (
     FoldComputedParamsPass,
 )
@@ -95,7 +92,6 @@ class XNNPACKPassManager:
                 ConstPropPass,
                 FuseBatchNormPass,
                 DecomposeBatchNorm,
-                DecomposeDepthwiseConvTransposePass,
                 DecomposeConvTransposePass,
                 FuseActivationPass,
                 DecomposeConcatenate,
