@@ -697,9 +697,15 @@ def _negative_checks(
     ]
 
 
-_ARGMAX_OPS = (
+_ARGMIN_OPS = (
+    torch.ops.aten.argmin.default,
+    exir_ops.edge.aten.argmin.default,
+)
+
+_ARG_REDUCTION_OPS = (
     torch.ops.aten.argmax.default,
     exir_ops.edge.aten.argmax.default,
+    *_ARGMIN_OPS,
 )
 
 _TO_DIM_ORDER_COPY_OPS = (
@@ -708,12 +714,12 @@ _TO_DIM_ORDER_COPY_OPS = (
 )
 
 
-def _argmax_all_users_cast_to_int32(node: fx.Node) -> bool:
+def _arg_reduction_all_users_cast_to_int32(node: fx.Node) -> bool:
     # TOSA ARGMAX produces int32 indices. This is only a faithful lowering
-    # when every user immediately narrows aten.argmax's int64 result:
+    # when every user immediately narrows the ATen index result:
     #
-    #   aten.argmax -> _to_dim_order_copy(dtype=int32) -> users
-    if node.target not in _ARGMAX_OPS or not node.users:
+    #   argmax/argmin -> _to_dim_order_copy(dtype=int32) -> users
+    if node.target not in _ARG_REDUCTION_OPS or not node.users:
         return False
 
     return all(
@@ -729,13 +735,13 @@ class CheckKnownUnsupportedTOSASemantics(OperatorSupportBase):
     def __init__(self, reporter: WhyNoPartitionReporter):
         self.reporter = reporter
 
-    def _check_argmax(self, node: fx.Node) -> bool:
-        if _argmax_all_users_cast_to_int32(node):
+    def _check_arg_reduction(self, node: fx.Node) -> bool:
+        if _arg_reduction_all_users_cast_to_int32(node):
             return True
 
         self.reporter.report_reject(
             node,
-            "TOSA ARGMAX produces int32 but aten.argmax returns int64.",
+            "TOSA ARGMAX produces int32 but the ATen reduction returns int64.",
         )
         return False
 
@@ -757,11 +763,8 @@ class CheckKnownUnsupportedTOSASemantics(OperatorSupportBase):
                 )
                 return False
 
-        if node.target in (
-            torch.ops.aten.argmax.default,
-            exir_ops.edge.aten.argmax.default,
-        ):
-            return self._check_argmax(node)
+        if node.target in _ARG_REDUCTION_OPS:
+            return self._check_arg_reduction(node)
 
         return True
 
@@ -1321,8 +1324,8 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
     ) -> bool:
         if is_safe_int32_to_int64_gather_boundary(node):
             return False
-        if node.target in _ARGMAX_OPS:
-            return not self._is_tosa_argmax_supported(node)
+        if node.target in _ARG_REDUCTION_OPS:
+            return not self._is_tosa_arg_reduction_supported(node)
         if self._is_prepared_topk_index(node):
             return False
 
@@ -1342,7 +1345,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         config, _ = get_static_topk_config(source, self.tosa_spec)
         return config is not None and topk_indices_only_feed_int32_casts(source)
 
-    def _is_argmax_int32_cast(
+    def _is_arg_reduction_int32_cast(
         self,
         node: torch.fx.Node,
         input_node: torch.fx.Node,
@@ -1353,13 +1356,13 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         if node.kwargs.get("dtype") != torch.int32:
             return False
 
-        if input_node.target not in _ARGMAX_OPS:
+        if input_node.target not in _ARG_REDUCTION_OPS:
             return False
 
-        if not _argmax_all_users_cast_to_int32(input_node):
+        if not _arg_reduction_all_users_cast_to_int32(input_node):
             return False
 
-        return self._is_tosa_argmax_supported(input_node)
+        return self._is_tosa_arg_reduction_supported(input_node)
 
     def _is_tosa_argmax_dtype_supported(
         self, node: torch.fx.Node, input_dtype: torch.dtype
@@ -1401,7 +1404,7 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             return False
         return True
 
-    def _is_tosa_argmax_supported(self, node: torch.fx.Node) -> bool:
+    def _is_tosa_arg_reduction_supported(self, node: torch.fx.Node) -> bool:
         dim = node.kwargs.get("dim", node.args[1] if len(node.args) > 1 else None)
         if dim is None:
             self.reporter.report_reject(
@@ -1417,6 +1420,14 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
         input_node = typing.cast(torch.fx.Node, node.args[0])
         input_tensor = get_first_fake_tensor(input_node)
         input_dtype = input_tensor.dtype
+        if node.target in _ARGMIN_OPS and (
+            input_dtype not in (torch.float16, torch.float32, torch.bfloat16)
+            or input_node.target in DQ_OPS
+        ):
+            self.reporter.report_reject(
+                node, "ARGMIN requires non-quantized floating-point input."
+            )
+            return False
         if input_node.target in DQ_OPS:
             # The quantizer annotated argmax's input: the dequantize is folded
             # before lowering and TOSA ARGMAX sees the quantized dtype.
@@ -1439,6 +1450,14 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
                 f"TOSA ARGMAX axis must be in [0, {input_rank - 1}] but got {dim}.",
             )
             return False
+
+        if node.target in _ARGMIN_OPS:
+            size = input_tensor.shape[axis]
+            if not isinstance(size, int) or not 0 < size <= self.int32_max:
+                self.reporter.report_reject(
+                    node, "ARGMIN requires a static, int32-sized reduction axis."
+                )
+                return False
 
         keepdim = node.kwargs.get(
             "keepdim", node.args[2] if len(node.args) > 2 else False
@@ -1472,10 +1491,9 @@ class CheckInt64InputsAndOutputs(OperatorSupportBase):
             ):
                 continue
 
-            # aten.argmax is nominally int64, but TOSA ARGMAX produces int32.
-            # Allow the explicit argmax -> int32 narrowing pattern so both nodes
-            # can be placed in the same delegate.
-            if self._is_argmax_int32_cast(node, input_node):
+            # ATen index reductions return int64, but TOSA ARGMAX produces int32.
+            # Allow explicit narrowing so both nodes can share a delegate.
+            if self._is_arg_reduction_int32_cast(node, input_node):
                 continue
             if is_topk_indices_int32_cast(node) and self._is_prepared_topk_index(
                 input_node
