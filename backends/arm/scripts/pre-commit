@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# Copyright 2026 Arm Limited and/or its affiliates.
+#
+# This source code is licensed under the BSD-style license found in the
+# LICENSE file in the root directory of this source tree.
+
+if ! command -v lintrunner >/dev/null 2>&1; then
+    echo "Warning: lintrunner not found. Skipping lint checks."
+    echo "Install with: pip install lintrunner lintrunner-adapters && lintrunner init"
+    exit 0
+fi
+
+if [ ! -f .lintrunner.toml ]; then
+    echo "Warning: .lintrunner.toml not found. Skipping lint checks."
+    exit 0
+fi
+
+git_dir=$(git rev-parse --git-dir)
+if command -v sha256sum >/dev/null 2>&1; then
+    toml_hash=$(sha256sum .lintrunner.toml | cut -d' ' -f1)
+else
+    toml_hash=$(shasum -a 256 .lintrunner.toml | cut -d' ' -f1)
+fi
+stored_hash=""
+[ -f "${git_dir}/.lintrunner_init_hash" ] && stored_hash=$(cat "${git_dir}/.lintrunner_init_hash")
+
+if [ "${toml_hash}" != "${stored_hash}" ]; then
+    echo "Running lintrunner init..."
+    if lintrunner init; then
+        echo "${toml_hash}" > "${git_dir}/.lintrunner_init_hash"
+    else
+        echo "lintrunner init failed. Run 'lintrunner init' manually."
+        exit 1
+    fi
+fi
+
+staged_files=()
+while IFS= read -r -d '' path; do
+    staged_files+=("$path")
+done < <(git diff --cached --name-only -z --diff-filter=ACMR)
+if [ ${#staged_files[@]} -eq 0 ]; then
+    exit 0
+fi
+
+file_hashes=()
+for path in "${staged_files[@]}"; do
+    file_hashes+=("$(git hash-object -- "$path")")
+done
+
+lintrunner -a --skip MYPY "${staged_files[@]}"
+lint_status=$?
+
+for i in "${!staged_files[@]}"; do
+    if [ "$(git hash-object -- "${staged_files[$i]}")" != "${file_hashes[$i]}" ]; then
+        echo "Lintrunner modified files. Review with 'git diff', then stage the intended fixes and retry."
+        exit 1
+    fi
+done
+
+if [ $lint_status -ne 0 ]; then
+    echo "Lint errors found. Fix them and try again, or use 'git commit --no-verify' to skip."
+    exit 1
+fi

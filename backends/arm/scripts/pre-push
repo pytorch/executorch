@@ -195,14 +195,26 @@ for COMMIT in ${COMMITS}; do
 
     echo -e "${INFO} Checking commit ${COMMIT}"
 
-    # lintrunner on latest patches.
-    echo -e "${INFO} Lintrunner"
-    MYPYPATH=./src/ lintrunner --revision ${COMMIT}^1
-    if [[ $? != 0 ]]; then
-        echo -e "${ERROR} Failed linting"
-        FAILED=1
-    else
-        echo -e "${SUCCESS} Lintrunner OK"
+    # Lint only files changed by this commit.
+    lint_files=()
+    while IFS= read -r -d '' lint_file; do
+        lint_files+=("$lint_file")
+    done < <(git diff-tree --no-commit-id --name-only -z \
+        --diff-filter=ACMR -r "${COMMIT}")
+    existing_lint_files=()
+    for lint_file in "${lint_files[@]}"; do
+        if [[ -f "$lint_file" ]]; then
+            existing_lint_files+=("$lint_file")
+        fi
+    done
+    if [[ ${#existing_lint_files[@]} -gt 0 ]]; then
+        echo -e "${INFO} Lintrunner"
+        if ! MYPYPATH=./src/ lintrunner "${existing_lint_files[@]}"; then
+            echo -e "${ERROR} Failed linting"
+            FAILED=1
+        else
+            echo -e "${SUCCESS} Lintrunner OK"
+        fi
     fi
 
     commit_files=$(git diff-tree --no-commit-id --name-only \
