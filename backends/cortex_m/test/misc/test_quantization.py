@@ -252,9 +252,10 @@ class SharedQspecSurroundedQuantizedOp(torch.nn.Module):
     }
     ops_after_transforms = {
         "executorch_exir_dialects_edge__ops_cortex_m_dequantize_per_tensor_default": 1,
-        "executorch_exir_dialects_edge__ops_cortex_m_maximum_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_maximum_default": 0,
         "executorch_exir_dialects_edge__ops_cortex_m_quantize_per_tensor_default": 1,
-        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 1,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_add_default": 0,
+        "executorch_exir_dialects_edge__ops_cortex_m_quantized_activation_default": 1,
         "executorch_exir_dialects_edge__ops_dim_order_ops__clone_dim_order_default": 1,
     }
 
