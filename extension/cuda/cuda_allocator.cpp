@@ -139,6 +139,42 @@ cudaMemPool_t mem_pool_for(int device) {
     (void)cudaGetLastError();
   }
 
+  // A peer device can use cudaMalloc memory once peer access is enabled, but
+  // pool memory only after the pool grants it access. Libraries such as torch
+  // read and write memory handed to them from kernels and copies on any device.
+  int count = 0;
+  if (cudaGetDeviceCount(&count) != cudaSuccess) {
+    (void)cudaGetLastError();
+    count = 0;
+  }
+  for (int peer = 0; peer < count; ++peer) {
+    int can_access = 0;
+    if (peer == device) {
+      continue;
+    }
+    if (cudaDeviceCanAccessPeer(&can_access, peer, device) != cudaSuccess) {
+      (void)cudaGetLastError();
+      continue;
+    }
+    if (can_access == 0) {
+      continue;
+    }
+    cudaMemAccessDesc access{};
+    access.location.type = cudaMemLocationTypeDevice;
+    access.location.id = peer;
+    access.flags = cudaMemAccessFlagsProtReadWrite;
+    err = cudaMemPoolSetAccess(pool, &access, 1);
+    if (err != cudaSuccess) {
+      ET_LOG(
+          Error,
+          "Granting device %d access to the pool of device %d failed: %s",
+          peer,
+          device,
+          cudaGetErrorString(err));
+      (void)cudaGetLastError();
+    }
+  }
+
   state.pools.emplace(device, pool);
   return pool;
 }

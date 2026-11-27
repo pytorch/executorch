@@ -200,6 +200,20 @@ that needs the GIL makes the wait hang. Bindings built without CUDA wait through
 short: `cudaDeviceSynchronize` took a median of 1.5 microseconds on an A100. The
 synchronization has no C++ ATen dependency.
 
+On a device with memory pools, `from_host()`, a CUDA `ExecuTorchResult` with
+`clone_outputs=True`, and `__dlpack__(copy=True)` take their memory from the
+pool that the CUDA delegates use, so making and dropping them does not call
+`cudaMalloc` or `cudaFree`. Dropping such a result waits for the whole device
+once before its memory goes back to the pool, as `cudaFree` did, since work on
+another stream, such as a torch side stream, may still use it. Like the other
+waits, it fails while a stream on the device captures a CUDA graph, and so does
+that capture; the memory is then kept. The pool keeps freed
+memory reserved for later results and delegates of the same process. It gives
+memory back only when the last CUDA delegate is destroyed, so memory freed after
+that, or in a process that never loads a CUDA delegate, stays reserved until the
+process exits. Other processes on the same GPU cannot use reserved memory: after
+dropping a 16 GiB result, the process still holds 16 GiB of the device.
+
 For bfloat16 inputs, raw byte buffers use the shape declared by the exported
 method. NumPy and PEP 3118 do not define bfloat16, so the buffer protocol shows
 a bfloat16 result as 16-bit unsigned integers in its real shape and layout.

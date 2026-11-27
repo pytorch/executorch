@@ -1270,12 +1270,14 @@ print("Input on a non-current device was read")
         self.assertEqual(host.device, torch.device("cpu"))
         torch.testing.assert_close(host, torch.full(self.shape, 4.0))
 
-    def test_device_chain_waits_for_the_device_twice_per_call(self):
+    def test_device_chain_waits_twice_per_call_and_once_per_dropped_upload(self):
         # Feeding each output into the next call, with a host upload per call.
         # Each call waits for the device twice: once before it runs, in case
         # another library still uses its input or output memory, and once after,
         # so its output is ready on any stream. The count is fixed per call, not
-        # per tensor.
+        # per tensor. With memory pools, each dropped upload waits once more,
+        # before the next upload can reuse its memory, and so does the input
+        # that the first call replaces. Without them, cudaFree waits instead.
         from torch.profiler import profile, ProfilerActivity
 
         method = self._load_method()
@@ -1305,7 +1307,8 @@ print("Input on a non-current device was read")
                 value = method(value, clone_outputs=True)[0]
 
         # The profiler waits for the device itself when it stops.
-        self.assertEqual(waits(chain) - waits(lambda: None), 2 * calls)
+        expected = 3 * calls + 1 if self._memory_pools_supported() else 2 * calls
+        self.assertEqual(waits(chain) - waits(lambda: None), expected)
         expected = 8.0
         for _ in range(calls):
             expected = (expected + 1.0) * 2.0
@@ -1313,6 +1316,94 @@ print("Input on a non-current device was read")
         torch.testing.assert_close(
             torch.from_dlpack(final), torch.full(self.shape, expected)
         )
+
+    def _memory_pools_supported(self):
+        supported = ctypes.c_int()
+        device = ctypes.c_int()
+        memory_pools_supported = 115  # CU_DEVICE_ATTRIBUTE_MEMORY_POOLS_SUPPORTED
+        self.assertEqual(
+            self.driver.cuDeviceGet(ctypes.byref(device), self.device.index), 0
+        )
+        self.assertEqual(
+            self.driver.cuDeviceGetAttribute(
+                ctypes.byref(supported), memory_pools_supported, device
+            ),
+            0,
+        )
+        return bool(supported.value)
+
+    def test_host_uploads_take_memory_from_the_pool(self):
+        # cudaMalloc and cudaFree enter the driver, where one call can wait
+        # behind other processes, so an upload made and dropped on every call
+        # takes its memory from a pool.
+        from torch.profiler import profile, ProfilerActivity
+
+        if not self._memory_pools_supported():
+            self.skipTest("the device has no memory pools")
+        count = torch.Size(self.shape).numel()
+        host = (
+            memoryview(array.array("f", [3.0]) * count).cast("B").cast("f", self.shape)
+        )
+        self.bindings.ExecuTorchResult.from_host(host, self.device.index)
+        with profile(activities=[ProfilerActivity.CPU, ProfilerActivity.CUDA]) as trace:
+            for _ in range(8):
+                self.bindings.ExecuTorchResult.from_host(host, self.device.index)
+        calls = {event.key: event.count for event in trace.key_averages()}
+        # Seeing the pool allocations shows the profiler traces these calls.
+        self.assertEqual(calls.get("cudaMallocFromPoolAsync", 0), 8)
+        self.assertEqual(calls.get("cudaMalloc", 0) + calls.get("cudaFree", 0), 0)
+        # Each upload is dropped after the next one is made, so two blocks serve
+        # them all.
+        addresses = set()
+        for _ in range(8):
+            uploaded = self.bindings.ExecuTorchResult.from_host(host, self.device.index)
+            addresses.add(torch.from_dlpack(uploaded).data_ptr())
+        self.assertLessEqual(len(addresses), 2)
+
+    def test_another_device_writes_an_upload(self):
+        if torch.cuda.device_count() < 2:
+            self.skipTest("needs two CUDA devices")
+        if not torch.cuda.can_device_access_peer(1, 0):
+            self.skipTest("device 1 cannot access device 0")
+        count = torch.Size(self.shape).numel()
+        host = (
+            memoryview(array.array("f", [0.0]) * count).cast("B").cast("f", self.shape)
+        )
+        uploaded = self.bindings.ExecuTorchResult.from_host(host, 0)
+        # torch copies between devices that can access each other on the source
+        # device, which then writes the upload's memory directly.
+        torch.from_dlpack(uploaded).copy_(torch.full(self.shape, 7.0, device="cuda:1"))
+        torch.cuda.synchronize(0)
+        torch.testing.assert_close(
+            torch.from_dlpack(uploaded).cpu(), torch.full(self.shape, 7.0)
+        )
+
+    def test_side_stream_reads_of_dropped_uploads_stay_intact(self):
+        # torch side streams do not wait for the default stream, so a dropped
+        # upload's memory must not serve the next upload while one still reads
+        # it.
+        count = torch.Size(self.shape).numel()
+        side = torch.cuda.Stream(device=self.device)
+        doubled = []
+        with torch.cuda.stream(side):
+            for value in range(4):
+                host = (
+                    memoryview(array.array("f", [float(value)]) * count)
+                    .cast("B")
+                    .cast("f", self.shape)
+                )
+                uploaded = torch.from_dlpack(
+                    self.bindings.ExecuTorchResult.from_host(host, self.device.index)
+                )
+                # Still reading when the next upload is made.
+                torch.cuda._sleep(100_000_000)
+                doubled.append(uploaded * 2)
+                del uploaded
+        torch.cuda.synchronize(self.device)
+        for value, result in enumerate(doubled):
+            torch.testing.assert_close(
+                result.cpu(), torch.full(self.shape, 2.0 * value)
+            )
 
     def _require_linux(self):
         # The torch-free chain checks loaded libraries through /proc.
