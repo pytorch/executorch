@@ -57,6 +57,12 @@ Tensor& softmax_out(
     return out;
   }
 
+  if (out.sizes() != input.sizes()) {
+    ET_LOG(Error, "softmax_out: output shape must match input shape");
+    context.fail(Error::InvalidArgument);
+    return out;
+  }
+
   if (!is_last_dim(input, dim)) {
     ET_LOG(
         Error,
