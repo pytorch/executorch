@@ -2076,6 +2076,42 @@ class TestPasses(unittest.TestCase):
             QuantDtype.use_fp16a8w, use_fp16=True
         )
 
+    def test_constant_only_partition_stays_on_cpu(self):
+        """An int64 buffer gets an int32 cast from I64toI32. When the buffer's consumer is
+        not delegated, that cast alone would form a partition with no graph input, which
+        QNN cannot compile ("No graph inputs present"). Unlike
+        test_partitioner_keeps_constant_only_subgraph_on_cpu, the constant-only node here
+        is the cast that I64toI32 inserts.
+        """
+
+        class Lookup(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("table", torch.arange(10) % 3)
+
+            def forward(self, x):
+                values, indices = x.topk(4)
+                return values + self.table[indices].float()
+
+        sample_input = (torch.randn(10),)
+        compiler_specs = generate_qnn_executorch_compiler_spec(
+            soc_model=QcomChipset.SM8650,
+            backend_options=generate_htp_compiler_spec(use_fp16=True),
+        )
+        try:
+            edge = to_edge_transform_and_lower_to_qnn(
+                Lookup(),
+                sample_input,
+                compiler_specs,
+                skip_node_op_set={"aten.index.Tensor", "aten.topk.default"},
+            )
+        except RuntimeError as e:
+            if "Failed to initialize QNN backend" in str(e):
+                skip_without_qnn_sdk(self, e)
+            raise
+
+        edge.to_executorch()
+
     def test_fp16a8w_conv_on_cpu_stays_fp16(self):
         """fp16a8w runs conv in fp16, but the HTP only takes it for 1x1 kernels, so a
         3x3 conv falls back to CPU. Its bias data and weight dequantize must be fp16
