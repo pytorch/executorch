@@ -333,45 +333,7 @@ runtime::Error Module::load_internal(
       ptn_ = std::move(*ptn_load_result);
       return runtime::Error::Ok;
     }
-    if (data_files_.size() > 0) {
-      for (const auto& data_file : data_files_) {
-        auto data_map_loader_result = make_data_loader(data_file, load_mode_);
-        if (!data_map_loader_result.ok()) {
-          return data_map_loader_result.error();
-        }
-        data_map_loaders_.push_back(std::move(*data_map_loader_result));
-      }
-    }
-
-    if (data_map_loaders_.size() > 0) {
-      for (auto i = 0; i < data_map_loaders_.size(); ++i) {
-        auto res_flat_tensor =
-            FlatTensorDataMap::load(data_map_loaders_[i].get());
-        if (!res_flat_tensor.ok()) {
-          return res_flat_tensor.error();
-        }
-        named_data_maps_.push_back(
-            std::make_unique<
-                std::remove_reference_t<decltype(*res_flat_tensor)>>(
-                std::move(*res_flat_tensor)));
-      }
-
-      // Extract raw pointers from unique_ptrs to pass to MergedDataMap::load()
-      std::vector<const NamedDataMap*> raw_data_maps;
-      raw_data_maps.reserve(named_data_maps_.size());
-      for (const auto& data_map : named_data_maps_) {
-        raw_data_maps.push_back(data_map.get());
-      }
-      auto res_merged = MergedDataMap::load(runtime::Span<const NamedDataMap*>(
-          raw_data_maps.data(), raw_data_maps.size()));
-      if (!res_merged.ok()) {
-        return res_merged.error();
-      }
-      merged_data_map_ =
-          std::make_unique<std::remove_reference_t<decltype(*res_merged)>>(
-              std::move(*res_merged));
-    }
-
+    ET_CHECK_OK_OR_RETURN_ERROR(load_data_maps());
     auto res_program = Program::load(data_loader_.get(), verification);
     if (!res_program.ok()) {
       return res_program.error();
@@ -379,9 +341,59 @@ runtime::Error Module::load_internal(
     auto program =
         std::make_unique<std::remove_reference_t<decltype(*res_program)>>(
             std::move(*res_program));
+    // The program reads from its loader, so it keeps the loader alive. The
+    // loader goes with the program, not with the last weak pointer to it.
+    std::shared_ptr<runtime::DataLoader> data_loader = std::move(data_loader_);
     program_ = std::shared_ptr<Program>(
-        program.release(), [](Program* pointer) { delete pointer; });
+        program.release(),
+        [data_loader = std::move(data_loader)](Program* pointer) mutable {
+          delete pointer;
+          data_loader.reset();
+        });
   }
+  return runtime::Error::Ok;
+}
+
+runtime::Error Module::load_data_maps() {
+  if (merged_data_map_ || (data_files_.empty() && data_map_loaders_.empty())) {
+    return runtime::Error::Ok;
+  }
+  // Keep nothing until the merge succeeds, so a retry reopens the files.
+  std::vector<std::unique_ptr<runtime::DataLoader>> file_loaders;
+  file_loaders.reserve(data_files_.size());
+  for (const auto& data_file : data_files_) {
+    auto data_map_loader_result = make_data_loader(data_file, load_mode_);
+    if (!data_map_loader_result.ok()) {
+      return data_map_loader_result.error();
+    }
+    file_loaders.push_back(std::move(*data_map_loader_result));
+  }
+  std::vector<std::unique_ptr<NamedDataMap>> named_data_maps;
+  std::vector<const NamedDataMap*> raw_data_maps;
+  for (const auto* loaders : {&data_map_loaders_, &file_loaders}) {
+    for (const auto& loader : *loaders) {
+      auto res_flat_tensor = FlatTensorDataMap::load(loader.get());
+      if (!res_flat_tensor.ok()) {
+        return res_flat_tensor.error();
+      }
+      named_data_maps.push_back(
+          std::make_unique<std::remove_reference_t<decltype(*res_flat_tensor)>>(
+              std::move(*res_flat_tensor)));
+      raw_data_maps.push_back(named_data_maps.back().get());
+    }
+  }
+  auto res_merged = MergedDataMap::load(runtime::Span<const NamedDataMap*>(
+      raw_data_maps.data(), raw_data_maps.size()));
+  if (!res_merged.ok()) {
+    return res_merged.error();
+  }
+  for (auto& file_loader : file_loaders) {
+    data_map_loaders_.push_back(std::move(file_loader));
+  }
+  named_data_maps_ = std::move(named_data_maps);
+  merged_data_map_ =
+      std::make_unique<std::remove_reference_t<decltype(*res_merged)>>(
+          std::move(*res_merged));
   return runtime::Error::Ok;
 }
 
@@ -556,6 +568,9 @@ runtime::Error Module::load_method(
       }
       return ptn_->load_method(method_name);
     }
+    // A Module made from a shared program loads its data maps only here, so
+    // a bad .ptd does not fail calls that only read the program.
+    ET_CHECK_OK_OR_RETURN_ERROR(load_data_maps());
 
     // Use passed backend_options, or fall back to stored ones from load().
     // An empty stored map behaves identically to nullptr downstream, so we

@@ -108,3 +108,17 @@ TEST_F(BundledModuleTest, TestVerifyInvalidIdx) {
       bundled_module->verify_method_outputs("forward", /*testset_idx=*/10000);
   EXPECT_EQ(status, Error::InvalidArgument);
 }
+
+TEST_F(BundledModuleTest, TestProgramOutlivesModuleFromFile) {
+  std::shared_ptr<executorch::ET_RUNTIME_NAMESPACE::Program> program;
+  {
+    auto bundled_module = BundledModule::from_file(bpte_path_.c_str());
+    ASSERT_EQ(bundled_module.error(), Error::Ok);
+    ASSERT_EQ(bundled_module.get()->load(), Error::Ok);
+    program = bundled_module.get()->program();
+  }
+  ASSERT_NE(program, nullptr);
+  auto method_name = program->get_method_name(0);
+  ASSERT_EQ(method_name.error(), Error::Ok);
+  EXPECT_STREQ(method_name.get(), "forward");
+}

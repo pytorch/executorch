@@ -17,11 +17,13 @@
 
 #include <executorch/extension/data_loader/file_data_loader.h>
 #include <executorch/extension/tensor/tensor.h>
+#include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/backend/backend_options_map.h>
 #include <executorch/runtime/backend/options.h>
 #include <executorch/runtime/core/exec_aten/testing_util/tensor_util.h>
 
 using namespace ::executorch::extension;
+using namespace ::executorch::extension::testing;
 using namespace ::executorch::runtime;
 
 class ModuleTest : public ::testing::Test {
@@ -424,6 +426,50 @@ TEST_F(ModuleTest, TestProgramPersistenceAndReuseAfterModuleDestruction) {
   EXPECT_TENSOR_CLOSE(result->at(0).toTensor(), *expected.get());
 }
 
+namespace {
+class TrackedLoader final : public DataLoader {
+ public:
+  TrackedLoader(std::unique_ptr<DataLoader> loader, bool& destroyed)
+      : loader_(std::move(loader)), destroyed_(destroyed) {}
+  ~TrackedLoader() override {
+    destroyed_ = true;
+  }
+  Result<FreeableBuffer> load(
+      size_t offset,
+      size_t size,
+      const SegmentInfo& segment_info) const override {
+    return loader_->load(offset, size, segment_info);
+  }
+  Result<size_t> size() const override {
+    return loader_->size();
+  }
+
+ private:
+  std::unique_ptr<DataLoader> loader_;
+  bool& destroyed_;
+};
+} // namespace
+
+TEST_F(ModuleTest, TestProgramKeepsItsLoaderAlive) {
+  auto file = FileDataLoader::from(model_path_.c_str());
+  ASSERT_EQ(file.error(), Error::Ok);
+  bool destroyed = false;
+  std::shared_ptr<Program> program;
+  {
+    Module owner(std::make_unique<TrackedLoader>(
+        std::make_unique<FileDataLoader>(std::move(*file)), destroyed));
+    ASSERT_EQ(owner.load(), Error::Ok);
+    program = owner.program();
+  }
+  // Programs load delegate and data segments through the loader on demand.
+  EXPECT_FALSE(destroyed);
+  // A weak pointer keeps the control block, but not the program or its loader.
+  std::weak_ptr<Program> weak_program = program;
+  program.reset();
+  EXPECT_TRUE(weak_program.expired());
+  EXPECT_TRUE(destroyed);
+}
+
 TEST_F(ModuleTest, TestConcurrentExecutionWithSharedProgram) {
   std::shared_ptr<Program> program;
   {
@@ -578,6 +624,94 @@ TEST_F(ModuleTest, TestPTD) {
 
   auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
   ASSERT_EQ(module.forward(tensor).error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSharedProgramLoadsItsDataMap) {
+  Module owner(add_mul_path_);
+  ASSERT_EQ(owner.load(), Error::Ok);
+  auto loader = FileDataLoader::from(add_mul_data_path_.c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Module module(
+      owner.program(),
+      nullptr,
+      nullptr,
+      nullptr,
+      std::make_unique<FileDataLoader>(std::move(*loader)));
+  ASSERT_EQ(module.load_method("forward"), Error::Ok);
+  auto tensor = make_tensor_ptr({2, 2}, {2.f, 3.f, 4.f, 2.f});
+  EXPECT_EQ(module.forward(tensor).error(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestSharedProgramReportsABadDataMapWhenLoadingAMethod) {
+  Module owner(add_mul_path_);
+  ASSERT_EQ(owner.load(), Error::Ok);
+  const TempFile bad_data_map(std::string(128, 'x'));
+  auto loader = FileDataLoader::from(bad_data_map.path().c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  Module module(
+      owner.program(),
+      nullptr,
+      nullptr,
+      nullptr,
+      std::make_unique<FileDataLoader>(std::move(*loader)));
+  EXPECT_EQ(module.load(), Error::Ok);
+  EXPECT_TRUE(module.is_loaded());
+  EXPECT_EQ(module.num_methods().error(), Error::Ok);
+  EXPECT_EQ(module.method_meta("forward").error(), Error::Ok);
+  EXPECT_EQ(module.load_method("forward"), Error::InvalidExternalData);
+}
+
+TEST_F(ModuleTest, TestLoadRetriesAfterAFailedProgramLoad) {
+  const TempFile bad_program(std::string(128, 'x'));
+  Module module(bad_program.path(), add_mul_data_path_);
+  const Error first_error = module.load();
+  EXPECT_NE(first_error, Error::Ok);
+  // A retry reports the program error again, not a repeated .ptd key.
+  EXPECT_EQ(module.load(), first_error);
+}
+
+namespace {
+void copy_file(const std::string& from, const std::string& to) {
+  std::ifstream source(from, std::ios::binary);
+  std::ofstream destination(to, std::ios::binary | std::ios::trunc);
+  destination << source.rdbuf();
+}
+} // namespace
+
+TEST_F(ModuleTest, TestLoadRetriesAfterAMissingDataFile) {
+  // Only the unique name is kept; the file appears after the first attempt.
+  const TempFile late_file("");
+  std::remove(late_file.path().c_str());
+  Module module(
+      add_mul_path_,
+      std::vector<std::string>{add_mul_data_path_, late_file.path()});
+  EXPECT_NE(module.load(), Error::Ok);
+
+  copy_file(linear_data_path_, late_file.path());
+  // The first file must not be added twice by the second attempt.
+  EXPECT_EQ(module.load(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestLoadRetriesAfterABadDataFileIsReplaced) {
+  const TempFile data_file(std::string(128, 'x'));
+  Module module(add_mul_path_, data_file.path());
+  EXPECT_EQ(module.load(), Error::InvalidExternalData);
+
+  copy_file(add_mul_data_path_, data_file.path());
+  EXPECT_EQ(module.load(), Error::Ok);
+}
+
+TEST_F(ModuleTest, TestLoadRetriesAfterTheSecondDataFileIsReplaced) {
+  const TempFile second_file(std::string(128, 'x'));
+  Module module(
+      add_mul_path_,
+      std::vector<std::string>{add_mul_data_path_, second_file.path()});
+  EXPECT_EQ(module.load(), Error::InvalidExternalData);
+
+  copy_file(linear_data_path_, second_file.path());
+  EXPECT_EQ(module.load(), Error::Ok);
 }
 
 TEST_F(ModuleTest, TestPTD_Multiple) {
