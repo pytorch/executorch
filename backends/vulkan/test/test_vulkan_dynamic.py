@@ -233,6 +233,39 @@ class TestVulkanDynamic(unittest.TestCase):
                     [node.target for node in edge.exported_program().graph.nodes],
                 )
 
+    def test_dynamic_squeeze(self):
+        # Every resize must recompute the squeezed output from the traced dims,
+        # including negative ones, without changing them for the next resize.
+        class Squeeze(torch.nn.Module):
+            def __init__(self, dims):
+                super().__init__()
+                self.dims = dims
+
+            def forward(self, x):
+                return x.squeeze(self.dims) * 2
+
+        cases = (
+            ((-1,), (3, 16, 1), 1),
+            ((1, 3), (3, 1, 16, 1), 2),
+            ((-3, -1), (3, 1, 16, 1), 2),
+        )
+        for dims, shape, dynamic_dim in cases:
+            for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
+                with self.subTest(dims=dims, storage=storage):
+                    model = Squeeze(dims)
+                    inputs = []
+                    for size in (16, 9, 4, 13):
+                        sizes = list(shape)
+                        sizes[dynamic_dim] = size
+                        inputs.append((torch.rand(sizes),))
+                    edge = self._lower(
+                        model,
+                        inputs[0],
+                        ({dynamic_dim: Dim("s", min=2, max=16)},),
+                        storage,
+                    )
+                    self._run(edge, model, inputs)
+
     def test_dynamic_gelu(self):
         for approximate in ("none", "tanh"):
             for storage in (VkStorageType.TEXTURE_3D, VkStorageType.BUFFER):
