@@ -44,6 +44,13 @@ bool validate_conv2d_arguments(
     return false;
   }
 
+  if (input.size(0) != output.size(0)) {
+    ET_LOG(
+        Error, "quantized_conv2d_out: input and output batch sizes must match");
+    context.fail(Error::InvalidArgument);
+    return false;
+  }
+
   if (layout == ActivationLayout::NHWCLogical) {
     if (!executorch::runtime::is_contiguous_dim_order(
             input.dim_order().data(), input.dim_order().size()) ||
