@@ -19,7 +19,7 @@ deliberately depends only on ``torch`` (and a lazy ``ScalarType`` import), so
 those consumers pull in no backend.
 """
 
-from typing import Optional
+from typing import Iterable, Optional
 
 import torch
 
@@ -33,6 +33,7 @@ N_CACHES_METHOD = "get_n_caches"
 KV_HEADS_METHOD = "get_kv_heads"
 HEAD_DIMS_METHOD = "get_head_dims"
 WINDOWS_METHOD = "get_windows"
+EOS_IDS_METHOD = "get_eos_ids"
 
 # Serialized logits-to-keep modes. Keep in sync with LogitsToKeepMode in
 # extension/llm/runner/model_metadata.h.
@@ -60,6 +61,18 @@ def write_max_seq_len(max_seq_len: Optional[int]) -> dict[str, int]:
     if max_seq_len is None:
         return {}
     return _require_positive(MAX_SEQ_LEN_METHOD, max_seq_len)
+
+
+def write_eos_ids(eos_ids: Iterable[int]) -> dict[str, list[int]]:
+    """Stop-token ids -> get_eos_ids; omitted when there are none.
+
+    The runner's get_eos_ids() replaces the tokenizer's EOS with this list
+    rather than adding to it, so pass the complete set (tokenizer EOS included).
+    """
+    ids = sorted({int(value) for value in eos_ids})
+    if any(value < 0 for value in ids):
+        raise ValueError(f"EOS token ids must be nonnegative: {ids}")
+    return {EOS_IDS_METHOD: ids} if ids else {}
 
 
 def write_activation_dtype(activation_dtype: str) -> dict[str, int]:

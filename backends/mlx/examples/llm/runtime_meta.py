@@ -201,7 +201,7 @@ def apply_chat_template(
     return input_ids
 
 
-def get_eos_token_ids(processor, model_id=None, local_files_only=False):
+def get_eos_token_ids(processor, model_id=None, local_files_only=False, revision=None):
     """Collect every id that should stop generation.
 
     A checkpoint can declare several: Qwen3 stops on both ``<|im_end|>`` and
@@ -220,7 +220,7 @@ def get_eos_token_ids(processor, model_id=None, local_files_only=False):
             from transformers import GenerationConfig
 
             generation_config = GenerationConfig.from_pretrained(
-                model_id, local_files_only=local_files_only
+                model_id, revision=revision, local_files_only=local_files_only
             )
             eos_ids.update(_as_id_set(generation_config.eos_token_id))
         except Exception as exc:
