@@ -8,8 +8,15 @@
 
 #include <executorch/extension/data_loader/mmap_data_loader.h>
 
+#include <cstdlib>
 #include <cstring>
+#include <sstream>
 #include <vector>
+
+#if defined(__linux__)
+#include <sys/resource.h>
+#include <sys/wait.h>
+#endif
 
 #include <gtest/gtest.h>
 
@@ -437,6 +444,108 @@ TEST_F(MmapDataLoaderTest, LoadIntoCopiesOffsetCorrectly) {
   EXPECT_EQ(0, std::memcmp(dst, contents + offset, size));
 }
 
+#if defined(__linux__)
+namespace {
+// Kilobytes the kernel reports as locked for the mapping that holds `address`.
+long locked_kb(const void* address) {
+  const auto target = reinterpret_cast<uintptr_t>(address);
+  std::ifstream smaps("/proc/self/smaps");
+  std::string line;
+  bool inside = false;
+  while (std::getline(smaps, line)) {
+    uintptr_t start = 0, end = 0;
+    char dash = 0;
+    std::istringstream header(line);
+    if (header >> std::hex >> start >> dash >> end && dash == '-') {
+      inside = start <= target && target < end;
+    } else if (inside && line.rfind("Locked:", 0) == 0) {
+      return std::stol(line.substr(7));
+    }
+  }
+  return -1;
+}
+} // namespace
+
+TEST_F(MmapDataLoaderTest, LockedLoadLocksEveryPageItUses) {
+  // Some sandboxes accept mlock but do not lock or report anything.
+  void* probe = mmap(
+      nullptr,
+      page_size_,
+      PROT_READ | PROT_WRITE,
+      MAP_PRIVATE | MAP_ANONYMOUS,
+      -1,
+      0);
+  ASSERT_NE(probe, MAP_FAILED);
+  const bool reports_locks =
+      mlock(probe, page_size_) == 0 && locked_kb(probe) > 0;
+  munmap(probe, page_size_);
+  if (!reports_locks) {
+    GTEST_SKIP() << "This system does not report locked memory";
+  }
+
+  std::vector<uint8_t> contents(4 * page_size_, 7);
+  TempFile tf(contents.data(), contents.size());
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(
+      tf.path().c_str(), MmapDataLoader::MlockConfig::UseMlock);
+  ASSERT_EQ(mdl.error(), Error::Ok);
+
+  // The segment starts near the end of a page, so it spans two pages.
+  Result<FreeableBuffer> fb = mdl->load(
+      page_size_ - 16,
+      32,
+      DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+  if (fb.error() == Error::NotSupported) {
+    GTEST_SKIP() << "This process may not lock two pages";
+  }
+  ASSERT_EQ(fb.error(), Error::Ok);
+  EXPECT_EQ(locked_kb(fb->data()), static_cast<long>(2 * page_size_ / 1024));
+}
+
+TEST_F(MmapDataLoaderTest, FailedLockUnmapsEveryPageItMapped) {
+  std::vector<uint8_t> contents(4 * page_size_, 7);
+  TempFile tf(contents.data(), contents.size());
+  Result<MmapDataLoader> mdl = MmapDataLoader::from(
+      tf.path().c_str(), MmapDataLoader::MlockConfig::UseMlock);
+  ASSERT_EQ(mdl.error(), Error::Ok);
+
+  // A child process, so that lowering its lock limit leaves the test alone.
+  constexpr int kLockAllowed = 2;
+  const pid_t child = fork();
+  ASSERT_NE(child, -1);
+  if (child == 0) {
+    const rlimit no_locking{0, 0};
+    if (setrlimit(RLIMIT_MEMLOCK, &no_locking) != 0) {
+      std::_Exit(EXIT_FAILURE);
+    }
+    Result<FreeableBuffer> fb = mdl->load(
+        page_size_ - 16,
+        32,
+        DataLoader::SegmentInfo(DataLoader::SegmentInfo::Type::Program));
+    if (fb.ok()) {
+      // Privileged processes may lock memory regardless of the limit.
+      std::_Exit(kLockAllowed);
+    }
+    std::ifstream maps("/proc/self/maps");
+    std::string line;
+    bool mapped = false;
+    while (std::getline(maps, line)) {
+      mapped = mapped || line.find(tf.path()) != std::string::npos;
+    }
+    std::_Exit(
+        fb.error() == Error::NotSupported && maps.eof() && !mapped
+            ? EXIT_SUCCESS
+            : EXIT_FAILURE);
+  }
+  int status = 0;
+  ASSERT_EQ(waitpid(child, &status, 0), child);
+  ASSERT_TRUE(WIFEXITED(status));
+  if (WEXITSTATUS(status) == kLockAllowed) {
+    GTEST_SKIP() << "This process may lock memory past its limit";
+  }
+  EXPECT_EQ(WEXITSTATUS(status), EXIT_SUCCESS);
+}
+#endif
+
 // Tests that the loader can handle files requiring 64-bit file systems.
 // This test verifies that offsets and sizes beyond 32-bit limits are handled
 // correctly by creating a sparse file with data at a large offset.
@@ -493,3 +602,19 @@ TEST_F(MmapDataLoaderTest, LargeFileOffsetSupport) {
       0, std::memcmp(buffer.data(), test_marker.data(), test_marker.size()))
       << "load_into data at large offset does not match expected marker";
 }
+
+#if defined(O_CLOEXEC)
+TEST_F(MmapDataLoaderTest, FromPathIsCloseOnExec) {
+  uint8_t data[8] = {};
+  TempFile tf(data, sizeof(data));
+  // open() returns the lowest free descriptor, so the loader gets this one.
+  const int fd = ::open(tf.path().c_str(), O_RDONLY);
+  ASSERT_GE(fd, 0);
+  ::close(fd);
+  Result<MmapDataLoader> loader = MmapDataLoader::from(tf.path().c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+  const int flags = ::fcntl(fd, F_GETFD);
+  ASSERT_GE(flags, 0);
+  EXPECT_NE(flags & FD_CLOEXEC, 0);
+}
+#endif
