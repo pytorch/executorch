@@ -2913,6 +2913,11 @@ class Sort(torch.nn.Module):
         return values
 
 
+class SortIndices(torch.nn.Module):
+    def forward(self, x):
+        return torch.sort(x, descending=True)[1]
+
+
 class SortAndIndex(torch.nn.Module):
     def __init__(self, shape, dim=-1, descending=True):
         super().__init__()
@@ -3137,6 +3142,11 @@ class TopKandIndex(torch.nn.Module):
     def forward(self, x):
         a, b = torch.topk(x, 3)
         return a + self.idx_source[b]
+
+
+class TopKIndices(torch.nn.Module):
+    def forward(self, x):
+        return torch.topk(x, 3)[1]
 
 
 class Triu(torch.nn.Module):
