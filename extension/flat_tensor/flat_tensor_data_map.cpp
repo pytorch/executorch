@@ -266,6 +266,15 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
 
 /* static */ Result<FlatTensorDataMap> FlatTensorDataMap::load(
     DataLoader* loader) {
+  Result<uint64_t> actual_size = loader->source_size();
+  if (!actual_size.ok()) {
+    return actual_size.error();
+  }
+  ET_CHECK_OR_RETURN_ERROR(
+      actual_size.get() >= FlatTensorHeader::kNumHeadBytes,
+      InvalidExternalData,
+      "FlatTensor data of %" PRIu64 " bytes is shorter than its header",
+      actual_size.get());
   // Check header.
   Result<FreeableBuffer> header = loader->load_at_offset(
       /*offset=*/0,
@@ -289,10 +298,6 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   if (!expected_size.ok()) {
     return expected_size.error();
   }
-  Result<uint64_t> actual_size = loader->source_size();
-  if (!actual_size.ok()) {
-    return actual_size.error();
-  }
   ET_CHECK_OR_RETURN_ERROR(
       expected_size.get() <= actual_size.get(),
       InvalidExternalData,
@@ -310,6 +315,13 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
       " overflows uint64_t; malformed PTD file.",
       fh->flatbuffer_offset,
       fh->flatbuffer_size);
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor_data_size <= actual_size.get(),
+      InvalidExternalData,
+      "FlatTensor flatbuffer ends at %" PRIu64 ", past the %" PRIu64
+      " bytes of data",
+      flat_tensor_data_size,
+      actual_size.get());
   // Load flatbuffer data as a segment.
   Result<FreeableBuffer> flat_tensor_data = loader->load_at_offset(
       /*offset=*/0,
@@ -319,6 +331,17 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
     ET_LOG(Error, "Failed to load flat_tensor data.");
     return flat_tensor_data.error();
   }
+
+  // Minimum size: root offset + file identifier, i.e. the flatbuffer header
+  // before the FlatTensor header begins. Checked before the identifier is
+  // read, and it keeps the root offset bound below from underflowing.
+  constexpr size_t kMinBufferSize = FlatTensorHeader::kHeaderOffset;
+  ET_CHECK_OR_RETURN_ERROR(
+      flat_tensor_data->size() >= kMinBufferSize,
+      InvalidExternalData,
+      "FlatTensor data size %zu is too small (minimum %zu)",
+      flat_tensor_data->size(),
+      kMinBufferSize);
 
   // Make sure magic matches.
   if (!flat_tensor_flatbuffer::FlatTensorBufferHasIdentifier(
@@ -346,18 +369,6 @@ ET_NODISCARD Result<const char*> FlatTensorDataMap::get_key(
   // walks that table's vtable. Nothing here runs full flatbuffer verification,
   // so a corrupt offset would otherwise let version()/named_data()/segments()
   // dereference memory outside the buffer.
-  //
-  // Minimum size: root offset + file identifier, i.e. the flatbuffer header
-  // before the FlatTensor header begins. The identifier check above already
-  // implies at least this many bytes, but check explicitly so the bound below
-  // cannot underflow.
-  constexpr size_t kMinBufferSize = FlatTensorHeader::kHeaderOffset;
-  ET_CHECK_OR_RETURN_ERROR(
-      flat_tensor_data->size() >= kMinBufferSize,
-      InvalidExternalData,
-      "FlatTensor data size %zu is too small (minimum %zu)",
-      flat_tensor_data->size(),
-      kMinBufferSize);
   uint32_t root_offset =
       flatbuffers::ReadScalar<flatbuffers::uoffset_t>(flat_tensor_data->data());
   // The root table is at buf + root_offset. It must not point into the header

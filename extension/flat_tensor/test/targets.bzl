@@ -48,6 +48,7 @@ def define_common_targets(is_fbcode=False):
                 "//executorch/extension/data_loader:buffer_data_loader",
                 "//executorch/extension/data_loader:file_data_loader",
                 "//executorch/extension/flat_tensor:flat_tensor_data_map",
+                "//executorch/extension/testing_util:temp_file",
                 "//executorch/runtime/core:named_data_map",
                 "//executorch/runtime/core/exec_aten:lib",
             ],

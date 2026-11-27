@@ -11,6 +11,7 @@
 #include <executorch/extension/flat_tensor/flat_tensor_data_map.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
 #include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
+#include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/platform/runtime.h>
@@ -177,6 +178,13 @@ TEST_F(FlatTensorDataMapTest, LoadAndCheckSize) {
   Result<FlatTensorDataMap> truncated_program =
       FlatTensorDataMap::load(&truncated_loader);
   ASSERT_EQ(truncated_program.error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, DataShorterThanHeaderIsInvalidExternalData) {
+  const uint8_t data[8] = {};
+  BufferDataLoader loader(data, sizeof(data));
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
 }
 
 namespace {
@@ -696,4 +704,40 @@ TEST_F(FlatTensorDataMapTest, RejectsOverflowingFlatbufferExtent) {
 
   EXPECT_EQ(
       FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsFlatbufferPastTheEndOfTheData) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion);
+
+  const uint64_t flatbuffer_size = data.size();
+  std::memcpy(
+      data.data() + kFlatbufferSizeFieldOffset,
+      &flatbuffer_size,
+      sizeof(flatbuffer_size));
+
+  alignas(std::max_align_t) std::array<uint8_t, 1024> aligned_buffer{};
+  ASSERT_LE(data.size(), aligned_buffer.size());
+  std::memcpy(aligned_buffer.data(), data.data(), data.size());
+  BufferDataLoader loader(aligned_buffer.data(), data.size());
+
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader).error(), Error::InvalidExternalData);
+}
+
+TEST_F(FlatTensorDataMapTest, RejectsFlatbufferShorterThanItsIdentifier) {
+  std::vector<uint8_t> data =
+      CreateDataWithVersion(FlatTensorDataMap::kMaxSupportedSchemaVersion);
+  const uint64_t zero = 0;
+  std::memcpy(data.data() + kFlatbufferOffsetFieldOffset, &zero, sizeof(zero));
+  std::memcpy(data.data() + kFlatbufferSizeFieldOffset, &zero, sizeof(zero));
+
+  // FileDataLoader returns no memory for an empty load.
+  executorch::extension::testing::TempFile file(data.data(), data.size());
+  Result<FileDataLoader> loader = FileDataLoader::from(file.path().c_str());
+  ASSERT_EQ(loader.error(), Error::Ok);
+
+  EXPECT_EQ(
+      FlatTensorDataMap::load(&loader.get()).error(),
+      Error::InvalidExternalData);
 }

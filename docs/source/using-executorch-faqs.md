@@ -74,6 +74,8 @@ This can also occur if the ExecuTorch portable library does not yet have an impl
 
 This error can occur for a few reasons, but the most common is a missing backend target. Ensure the appropriate backend target is linked. For XNNPACK, this is `xnnpack_backend`. If the backend is linked but is still not available, try linking with --whole-archive: `-Wl,--whole-archive libxnnpack_backend.a -Wl,--no-whole-archive libxnnpack_profiler.a`.
 
+It also happens when a model keeps its weights in a separate `.ptd` file and that file was not passed when loading. The log names the missing tensor.
+
 ### Duplicate Kernel Registration Abort
 
 This manifests as a crash call stack including ExecuTorch kernel registration and failing with an `et_pal_abort`. This typically means there are multiple `gen_operators_lib` targets linked into the applications. There must be only one generated operator library per target, though each model can have its own `gen_selected_ops/generate_bindings_for_kernels` call.
