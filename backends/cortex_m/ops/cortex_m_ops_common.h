@@ -149,23 +149,28 @@ inline bool is_channels_last_tensor(const Tensor& tensor) {
   return tensor.dim_order() == channels_last_order;
 }
 
-inline bool is_channel_broadcast(const Tensor& tensor1, const Tensor& tensor2) {
-  if (tensor1.dim() != tensor2.dim()) {
+inline bool is_channel_broadcast(
+    const Tensor& tensor1,
+    const Tensor& tensor2,
+    ActivationLayout layout) {
+  if (tensor1.dim() != 4 || tensor2.dim() != 4) {
     return false;
   }
 
-  if (tensor1.dim() != 4) {
+  const int64_t channel_dim = layout == ActivationLayout::NHWCLogical ? 3 : 1;
+  if (tensor1.size(channel_dim) != tensor2.size(channel_dim) ||
+      (tensor1.numel() != tensor1.size(channel_dim) &&
+       tensor2.numel() != tensor2.size(channel_dim))) {
     return false;
   }
 
-  if (tensor1.size(1) != tensor2.size(1)) {
-    return false;
+  if (layout == ActivationLayout::NHWCLogical) {
+    return executorch::runtime::is_contiguous_dim_order(
+               tensor1.dim_order().data(), tensor1.dim()) &&
+        executorch::runtime::is_contiguous_dim_order(
+               tensor2.dim_order().data(), tensor2.dim());
   }
-
-  const bool tensor1_channels_only = tensor1.numel() == tensor1.size(1);
-  const bool tensor2_channels_only = tensor2.numel() == tensor2.size(1);
-
-  return tensor1_channels_only || tensor2_channels_only;
+  return true;
 }
 
 inline bool check_int32_within_range(

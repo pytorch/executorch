@@ -12,6 +12,7 @@ import executorch.backends.transforms.channels_last_ops  # noqa: F401
 import torch
 from executorch.backends.cortex_m.utils import (
     coerce_int_pair,
+    is_channel_broadcast_shape,
     skips_quantized_max_pool2d,
 )
 from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
@@ -20,6 +21,9 @@ from executorch.backends.transforms.canonicalize_view_copy_permute_pass import (
 from executorch.backends.transforms.channels_last_layout import (
     LAYOUT_PERMUTE_COPY,
     PERMUTE_COPY_TARGETS,
+)
+from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
+    RemovePermutesAroundElementwiseOps,
 )
 from executorch.backends.transforms.replace_ops_with_channels_last_variants import (
     ChannelsLastOpSpec,
@@ -108,10 +112,38 @@ _EXPLICIT_LAYOUT_OP_MAP: dict[Target, ChannelsLastOpSpec] = {
     ),
 }
 
+_BROADCAST_OPS = (
+    exir_ops.edge.aten.add.Tensor,
+    exir_ops.edge.aten.mul.Tensor,
+    exir_ops.edge.aten.sub.Tensor,
+)
+
 
 class CortexMReplaceOpsWithChannelsLastVariants(ReplaceOpsWithChannelsLastVariants):
     def __init__(self, exported_program: ExportedProgram) -> None:
         super().__init__(exported_program, op_map=dict(_EXPLICIT_LAYOUT_OP_MAP))
+
+    def call(self, graph_module: GraphModule) -> PassResult:
+        # Select before rewriting: new layout copies have no shape metadata yet.
+        broadcast_nodes = {
+            node
+            for node in graph_module.graph.nodes
+            if node.target in _BROADCAST_OPS
+            and _has_input_and_output_qparams(node)
+            and _has_per_tensor_qparam(node, "input_qparams", 1)
+            and node.args[0].meta["val"].shape != node.args[1].meta["val"].shape
+            and is_channel_broadcast_shape(
+                node.args[0].meta["val"], node.args[1].meta["val"]
+            )
+        }
+        for target in _BROADCAST_OPS:
+            self.op_map[target] = ChannelsLastOpSpec(
+                target=target,
+                input_indices=[0, 1],
+                output_indices=[0],
+                filter_fn=broadcast_nodes.__contains__,
+            )
+        return super().call(graph_module)
 
     # Emit a Conv1d-as-Conv2d output as squeeze -> rank-3 layout copy rather
     # than rank-4 copy -> squeeze, so RemovePermutesAroundElementwiseOps can
@@ -138,6 +170,19 @@ class CortexMReplaceOpsWithChannelsLastVariants(ReplaceOpsWithChannelsLastVarian
         )
 
 
+class CortexMRemovePermutesAroundElementwiseOps(RemovePermutesAroundElementwiseOps):
+    def __init__(self) -> None:
+        # Broadcast kernels require channels to remain physically contiguous.
+        super().__init__(
+            target_filters={
+                target: lambda node: not _has_input_and_output_qparams(node)
+                or cast(Node, node.args[0]).meta["val"].shape
+                == cast(Node, node.args[1]).meta["val"].shape
+                for target in _BROADCAST_OPS
+            }
+        )
+
+
 class CortexMCanonicalizeViewCopyPermutePass(CanonicalizeViewCopyPermutePass):
     def __init__(self) -> None:
         super().__init__(permute_targets=PERMUTE_COPY_TARGETS)
@@ -157,6 +202,21 @@ class CortexMCanonicalizeViewCopyPermutePass(CanonicalizeViewCopyPermutePass):
 class ValidateCortexMExplicitLayoutPass(ExportPass):
     def call(self, graph_module: GraphModule) -> PassResult:
         for node in graph_module.graph.nodes:
+            if node.target in _BROADCAST_OPS and _has_input_and_output_qparams(node):
+                input1 = node.args[0].meta["val"]
+                input2 = node.args[1].meta["val"]
+                if input1.shape != input2.shape and not (
+                    input1.is_contiguous()
+                    and input2.is_contiguous()
+                    and is_channel_broadcast_shape(input1, input2, channel_dim=3)
+                ):
+                    raise RuntimeError(
+                        "Cortex-M explicit layout requires quantized channel "
+                        "broadcasts to use contiguous NHWC tensors; "
+                        f"{node.target} received shapes {tuple(input1.shape)} "
+                        f"and {tuple(input2.shape)}."
+                    )
+
             if node.target in _EXPLICIT_LAYOUT_OP_MAP and (
                 node.meta.get("input_qparams") or node.meta.get("output_qparams")
             ):

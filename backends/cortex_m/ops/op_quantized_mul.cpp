@@ -14,12 +14,9 @@ namespace {
 constexpr int32_t kInt8ActivationMin = std::numeric_limits<int8_t>::min();
 constexpr int32_t kInt8ActivationMax = std::numeric_limits<int8_t>::max();
 
-} // namespace
-
 using KernelRuntimeContext = torch::executor::KernelRuntimeContext;
 
-// cppcheck-suppress unusedFunction
-Tensor& quantized_mul_out(
+Tensor& quantized_mul_out_impl(
     KernelRuntimeContext& context,
     const Tensor& input1_int8,
     const int64_t input1_zero_point,
@@ -28,10 +25,12 @@ Tensor& quantized_mul_out(
     const int64_t output_zero_point,
     const int64_t output_multiplier,
     const int64_t output_shift,
+    ActivationLayout layout,
     Tensor& out) {
   // Validate tensor types and quantization parameters
 
-  bool channel_broadcast = is_channel_broadcast(input1_int8, input2_int8);
+  bool channel_broadcast =
+      is_channel_broadcast(input1_int8, input2_int8, layout);
   validate_cmsis_nn_tensor_requirements(
       input1_int8,
       input2_int8,
@@ -70,7 +69,8 @@ Tensor& quantized_mul_out(
       std::swap<int8_t*>(input1_ptr, input2_ptr);
     }
 
-    muls_per_loop = input1_int8.size(1);
+    const int64_t channel_dim = layout == ActivationLayout::NHWCLogical ? 3 : 1;
+    muls_per_loop = input1_int8.size(channel_dim);
   } else {
     muls_per_loop = out.numel();
   }
@@ -115,6 +115,56 @@ Tensor& quantized_mul_out(
     }
   }
   return out;
+}
+
+} // namespace
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_mul_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    Tensor& out) {
+  return quantized_mul_out_impl(
+      context,
+      input1_int8,
+      input1_zero_point,
+      input2_int8,
+      input2_zero_point,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      ActivationLayout::NCHWLogical,
+      out);
+}
+
+// cppcheck-suppress unusedFunction
+Tensor& quantized_mul_nhwc_out(
+    KernelRuntimeContext& context,
+    const Tensor& input1_int8,
+    const int64_t input1_zero_point,
+    const Tensor& input2_int8,
+    const int64_t input2_zero_point,
+    const int64_t output_zero_point,
+    const int64_t output_multiplier,
+    const int64_t output_shift,
+    Tensor& out) {
+  return quantized_mul_out_impl(
+      context,
+      input1_int8,
+      input1_zero_point,
+      input2_int8,
+      input2_zero_point,
+      output_zero_point,
+      output_multiplier,
+      output_shift,
+      ActivationLayout::NHWCLogical,
+      out);
 }
 
 } // namespace native

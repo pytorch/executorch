@@ -25,9 +25,6 @@ from executorch.backends.transforms.fuse_cascaded_transpose_or_permute_ops impor
     FuseCascadedTransposeOrPermuteOps,
 )
 from executorch.backends.transforms.remove_getitem_op import RemoveGetItemPass
-from executorch.backends.transforms.remove_permutes_around_elementwise_ops import (
-    RemovePermutesAroundElementwiseOps,
-)
 from executorch.backends.transforms.remove_unused_constants_pass import (
     RemoveUnusedConstantsPass,
 )
@@ -58,6 +55,7 @@ from .decompose_mean_pass import DecomposeMeanPass
 from .decompose_sdpa_pass import DecomposeSDPAPass
 from .explicit_layout_pass import (
     CortexMCanonicalizeViewCopyPermutePass,
+    CortexMRemovePermutesAroundElementwiseOps,
     CortexMReplaceOpsWithChannelsLastVariants,
     ValidateCortexMExplicitLayoutPass,
 )
@@ -122,10 +120,14 @@ def _preserving_quantized_dtype(pass_cls: PassClass) -> PassClass:
 
 class _CortexMLoweringPass(ExportedProgramPassBase):
     def __init__(
-        self, pass_classes: list[PassClass], target_config: CortexMTargetConfig
+        self,
+        pass_classes: list[PassClass],
+        target_config: CortexMTargetConfig,
+        use_explicit_layout: bool,
     ) -> None:
         self.pass_classes = pass_classes
         self.target_config = target_config
+        self.use_explicit_layout = use_explicit_layout
 
     def call(self, exported_program: ExportedProgram) -> ExportedProgramPassResult:
         modified = False
@@ -136,6 +138,8 @@ class _CortexMLoweringPass(ExportedProgramPassBase):
                 kwargs["exported_program"] = exported_program
             if "target_config" in signature.parameters:
                 kwargs["target_config"] = self.target_config
+            if "use_explicit_layout" in signature.parameters:
+                kwargs["use_explicit_layout"] = self.use_explicit_layout
 
             transform_pass = _preserving_quantized_dtype(pass_cls)(**kwargs)
             transformed = _transform(exported_program, transform_pass)
@@ -181,7 +185,8 @@ class CortexMPassManager(ExportedProgramPassManager):
         # Merge layout copies with adjacent user transposes before regions claim them.
         FuseCascadedTransposeOrPermuteOps,
         # Move layout copies across pads before singleton permutations become views.
-        RemovePermutesAroundElementwiseOps,
+        CortexMRemovePermutesAroundElementwiseOps,
+        FuseCascadedTransposeOrPermuteOps,
         CortexMCanonicalizeViewCopyPermutePass,
         ValidateCortexMExplicitLayoutPass,
         ReplaceQuantNodesPass,
@@ -218,13 +223,15 @@ class CortexMPassManager(ExportedProgramPassManager):
                 entry point. Omit when using ``edge.transform(pass_manager)``.
             passes: Optional override of the pass list. Defaults to
                 the legacy or explicit-layout pass list selected by
-                ``use_explicit_layout``.
+                ``use_explicit_layout``. Custom lists must match that layout
+                setting, which still controls lowering.
             target_config: Compilation target for passes that need it.
                 Defaults to ``CortexMTargetConfig(cpu=CortexM.M55)``, which
                 resolves through cmsis_nn to the MVE backend — matching the
                 pre-config historical behaviour.
-            use_explicit_layout: Select the experimental explicit-layout pass
-                sequence. Legacy lowering remains the default.
+            use_explicit_layout: Select explicit-layout lowering and its default
+                pass sequence. Also applies to custom pass lists. Legacy
+                lowering remains the default.
         """
         self.exported_program = exported_program
         default_passes = (
@@ -243,7 +250,7 @@ class CortexMPassManager(ExportedProgramPassManager):
             cpu=CortexM.M55
         )
         lowering_passes: list[PassType] = [
-            _CortexMLoweringPass(pass_classes, self.target_config)
+            _CortexMLoweringPass(pass_classes, self.target_config, use_explicit_layout)
         ]
         super().__init__(lowering_passes)
 
