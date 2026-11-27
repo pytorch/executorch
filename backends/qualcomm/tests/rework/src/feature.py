@@ -9,6 +9,7 @@ import os
 import tempfile
 from functools import partial, reduce
 from operator import mul
+from typing import List, NamedTuple, Optional
 from unittest.mock import Mock
 
 import pytest
@@ -362,6 +363,163 @@ class MultiGraph:
             ),
             expected=expected,
         )
+
+
+class LoadMethodGraphOnly:
+    graph_names = ["up_down_proj", "up_proj"]
+
+    @staticmethod
+    def _lower(qnn_config, compile_specs, models, inputs):
+        modules_dict = {}
+        for graph_name, module in zip(__class__.graph_names, models):
+            with calibrate(module, [inputs], get_quantizer(qnn_config)) as model:
+                modules_dict[graph_name] = model
+        edge_prog_mgr = to_edge_transform_and_lower_to_qnn(
+            module=modules_dict,
+            inputs=inputs,
+            compiler_specs={graph_name: compile_specs for graph_name in modules_dict},
+        )
+        max_sf_size = update_spill_fill_size(
+            [edge_prog_mgr.exported_program(name) for name in modules_dict]
+        )
+        return edge_prog_mgr.to_executorch(), max_sf_size
+
+    class Run(NamedTuple):
+        name: str
+        multi_graph: bool
+        method_index: int
+        extra_cmds: str
+        # graphs expected to be loaded alone; empty if the whole context loads
+        selected_graphs: List[str]
+        num_graphs_loaded: int
+        num_groups: Optional[int] = None
+        cached_method: Optional[str] = None
+
+    @staticmethod
+    def _check_log(run):
+        def verify(msg):
+            if run.selected_graphs:
+                for graph_name in run.selected_graphs:
+                    assert (
+                        f"Loading only graph {graph_name} from the context binary"
+                        in msg
+                    ), f"{graph_name} was not loaded alone"
+            else:
+                assert "Loading only graph" not in msg, "unexpected selective load"
+            assert (
+                f"Loaded {run.num_graphs_loaded} graph(s) from the context binary"
+                in msg
+            ), f"expected {run.num_graphs_loaded} graph(s) to be loaded"
+            if run.num_groups is not None:
+                assert run.num_groups == msg.count(
+                    "Starting a new spill-fill group"
+                ), f"expected {run.num_groups} spill-fill group(s)"
+            assert (run.cached_method is not None) == (
+                f"Use cached delegate handle for current method: {run.cached_method}"
+                in msg
+            ), "unexpected delegate cache state"
+
+        return verify
+
+    @staticmethod
+    @unpack_fixtures
+    def test(subtests, qnn_config, compile_specs, expected):
+        if qnn_config.build_folder == "build-x86":
+            pytest.skip("weight sharing is not supported on host machine")
+        backend_compile_specs = compile_specs(
+            tuple(
+                {
+                    "soc_model": getattr(QcomChipset, qnn_config.soc_model),
+                    "use_fp16": False,
+                    "use_weight_sharing": True,
+                    "use_multi_contexts": True,
+                }.items()
+            )
+        )
+        model = MultiGraph.Model()
+        models = [model, model.up_proj]
+        inputs = model.example_inputs()
+        graph_names = __class__.graph_names
+        Run = __class__.Run
+        runs = [
+            Run(
+                "method_only_graph_0",
+                True,
+                0,
+                " --load_method_graph_only",
+                [graph_names[0]],
+                1,
+            ),
+            Run(
+                "method_only_graph_1",
+                True,
+                1,
+                " --load_method_graph_only",
+                [graph_names[1]],
+                1,
+            ),
+            Run(
+                "single_graph_fallback",
+                False,
+                0,
+                " --load_method_graph_only",
+                [],
+                1,
+            ),
+            Run(
+                "group_owner_destroyed_before_load",
+                True,
+                1,
+                " --load_method_graph_only --preload_method_index 0",
+                graph_names,
+                1,
+                num_groups=2,
+            ),
+            Run(
+                "group_owner_outlives_member",
+                True,
+                1,
+                " --load_method_graph_only --preload_method_index 0"
+                " --destroy_preload_after_load",
+                graph_names,
+                1,
+                num_groups=1,
+            ),
+            Run(
+                "shared_delegate_outlives_creator",
+                True,
+                1,
+                " --preload_method_index 0 --destroy_preload_after_load",
+                [],
+                2,
+                num_groups=1,
+                cached_method=graph_names[1],
+            ),
+        ]
+
+        with expected as metrics:
+            multi_graph_prog, max_sf_size = __class__._lower(
+                qnn_config, backend_compile_specs, models, inputs
+            )
+            assert max_sf_size > 0, "spill-fill group cases need a buffer"
+            single_graph_prog, _ = __class__._lower(
+                qnn_config, backend_compile_specs, models[:1], inputs
+            )
+            for run in runs:
+                with subtests.test(msg=run.name), temp_attribute(
+                    qnn_config, "method_index", run.method_index
+                ):
+                    verify_output_remote(
+                        module=models[run.method_index],
+                        inputs=inputs,
+                        executorch_prog=(
+                            multi_graph_prog if run.multi_graph else single_graph_prog
+                        ),
+                        metrics=metrics,
+                        qnn_config=qnn_config,
+                        extra_cmds=run.extra_cmds,
+                        output_callback=__class__._check_log(run),
+                    )
 
 
 class OnlinePrepare:

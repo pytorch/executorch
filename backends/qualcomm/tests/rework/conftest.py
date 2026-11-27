@@ -376,6 +376,7 @@ def verify_output_remote(
     executorch_prog: ExecutorchProgramManager,
     metrics: Metrics,
     qnn_config: QnnConfig,
+    extra_cmds: str = "",
     output_callback=None,
 ):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -409,6 +410,7 @@ def verify_output_remote(
             workspace=f"/data/local/tmp/{device_workspace}",
         )
         device.push(inputs=[inputs], init_env=False)
+        device.extra_cmds += extra_cmds
         device.bridge.rmdir(device.output_folder)
         device.execute(
             method_index=getattr(qnn_config, "method_index", 0),

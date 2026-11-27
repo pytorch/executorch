@@ -66,6 +66,17 @@ class QnnBackendCache {
   executorch::runtime::Error Configure(
       const std::vector<std::string>& graph_names);
 
+  // Restrict a deserialized multi-graph binary to graph_names; QnnContext
+  // then deserializes only those graphs (QNN_CONTEXT_CONFIG_ENABLE_GRAPHS).
+  // Best effort: leaves every graph enabled (GetEnabledGraphNames() stays
+  // empty) if the binary has a single graph, is not a context binary, or
+  // lacks any of graph_names.
+  void EnableGraphs(const std::vector<std::string>& graph_names);
+
+  const std::vector<std::string>& GetEnabledGraphNames() const {
+    return enabled_graph_names_;
+  }
+
  protected:
   virtual executorch::runtime::Error RetrieveBackendBinaryInfo(
       __ET_UNUSED const QnnSystemContext_BinaryInfo_t* binaryinfo) {
@@ -89,6 +100,7 @@ class QnnBackendCache {
   bool is_fcb_;
   QnnSystemDlc_Handle_t fcb_dlc_handle_{nullptr};
   std::vector<std::string> graph_names_;
+  std::vector<std::string> enabled_graph_names_;
   std::unordered_map<std::string, std::vector<Qnn_Tensor_t>>
       input_tensor_structs_;
   std::unordered_map<std::string, std::vector<Qnn_Tensor_t>>

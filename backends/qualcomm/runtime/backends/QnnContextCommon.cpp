@@ -82,6 +82,27 @@ Error QnnContext::Configure() {
   if (cache_->GetCacheState() == QnnBackendCache::DESERIALIZE) {
     const QnnExecuTorchContextBinary& qnn_context_blob =
         cache_->GetQnnContextBlob();
+#ifdef QNN_PROPERTY_CONTEXT_SUPPORT_CONFIG_ENABLE_GRAPHS
+    const std::vector<std::string>& enabled_graphs =
+        cache_->GetEnabledGraphNames();
+    // Must outlive qnn_context_create_from_binary below.
+    std::vector<const char*> enabled_graph_ptrs;
+    QnnContext_Config_t enable_graphs_config = QNN_CONTEXT_CONFIG_INIT;
+    if (!enabled_graphs.empty()) {
+      for (const std::string& graph_name : enabled_graphs) {
+        enabled_graph_ptrs.push_back(graph_name.c_str());
+      }
+      enabled_graph_ptrs.push_back(nullptr);
+      enable_graphs_config.option = QNN_CONTEXT_CONFIG_ENABLE_GRAPHS;
+      enable_graphs_config.enableGraphs = enabled_graph_ptrs.data();
+      if (!temp_context_config.empty() &&
+          temp_context_config.back() == nullptr) {
+        temp_context_config.pop_back();
+      }
+      temp_context_config.push_back(&enable_graphs_config);
+      temp_context_config.push_back(nullptr);
+    }
+#endif
     /*
     Total DSP heap usage can be measured in two conditions, first context
     creation and last context free. By the QNN documentation, we need to insert
