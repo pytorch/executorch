@@ -8,14 +8,61 @@ import copy
 import unittest
 
 import torch
+from executorch.examples.models.llama.attention import AttentionMHA, RingKVCache
 from executorch.examples.models.llama.model_args import ModelArgs
+from executorch.examples.models.llama.rope import Rope
 
 from executorch.examples.models.llama.source_transformation.attention_sink import (
     CachePositionsManagerWithSink,
+    enable_attention_sink,
     KVCacheWithAttentionSink,
     RopeWithAttentionSink,
 )
 from parameterized import parameterized
+
+
+class EnableAttentionSinkTest(unittest.TestCase):
+    @parameterized.expand([(16, 8, 16), (64, 4, 12), (12, 8, 16)])
+    def test_zero_sink_uses_ring_cache(self, context_size, chunk_size, cache_size):
+        params = ModelArgs(
+            dim=16,
+            n_layers=1,
+            n_heads=2,
+            head_dim=8,
+            vocab_size=32,
+            max_context_len=context_size,
+            max_seq_len=chunk_size,
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+        )
+        model = torch.nn.Module()
+        model.rope = Rope(params)
+        model.attention = AttentionMHA(params, 0, model.rope)
+        model.double()
+        enable_attention_sink(model, params, sink_size=0, window_size=8)
+
+        cache = model.attention.kv_cache
+        self.assertIsInstance(cache, RingKVCache)
+        self.assertTrue(cache.is_ring_buffer)
+        self.assertEqual(cache.k_cache.shape, (1, 2, cache_size, 8))
+        self.assertEqual(cache.k_cache.dtype, torch.float64)
+        self.assertEqual(model.rope.ring_size, cache_size)
+
+        cos, sin = model.rope.get_freqs(torch.tensor([cache_size - 2]), 4)
+        positions = [cache_size - 2, cache_size - 1, 0, 1]
+        torch.testing.assert_close(cos, model.rope.freqs_cos[positions])
+        torch.testing.assert_close(sin, model.rope.freqs_sin[positions])
+
+        for start in range(0, 2 * cache_size, chunk_size):
+            values = torch.arange(start, start + chunk_size, dtype=torch.float64)
+            values = values.reshape(1, 1, chunk_size, 1).expand(1, 2, -1, 8)
+            cache.update(torch.tensor([start]), values, values)
+            mask = cache.create_causal_mask_for_ring_buffer(start, chunk_size)
+            visible_positions = cache.k_cache[0, 0, :, 0][mask[0] == 0]
+            torch.testing.assert_close(
+                visible_positions.sort().values,
+                torch.arange(max(0, start - 7), start + 1, dtype=torch.float64),
+            )
 
 
 class RopeWithAttentionSinkTest(unittest.TestCase):
@@ -69,7 +116,10 @@ class RopeWithAttentionSinkWrapTest(unittest.TestCase):
         # Ring top is 20. The table is deliberately longer, so a slice running
         # past the ring still lands on real rows instead of going out of bounds.
         self.params = ModelArgs(
-            use_kv_cache=True, enable_dynamic_shape=True, max_context_len=64
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+            max_context_len=64,
+            max_seq_len=self.WINDOW_SIZE,
         )
         self.rope = RopeWithAttentionSink(
             params=self.params,
@@ -226,14 +276,15 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
             use_kv_cache=True,
             enable_dynamic_shape=True,
             max_context_len=256,
+            max_seq_len=self.window_size,
         )
         self.rope = RopeWithAttentionSink(
             params=self.params,
             window_size=self.window_size,
             sink_size=self.sink_size,
         )
-        # Total cache size = sink_size + window_size * 2 = 4 + 56 = 60
-        self.cache_size = self.sink_size + self.window_size * 2
+        # Total cache size = sink_size + window_size + max_seq_len = 60.
+        self.cache_size = self.sink_size + self.window_size + self.params.max_seq_len
         self.kv_cache = KVCacheWithAttentionSink(
             n_heads=self.params.n_heads,
             head_dim=self.params.head_dim,
@@ -242,6 +293,8 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
             max_batch_size=self.max_batch_size,
             window_size=self.window_size,
             sink_size=self.sink_size,
+            max_context_length=self.params.max_context_len,
+            max_seq_len=self.params.max_seq_len,
             dtype=self.dtype,
         )
 
@@ -372,11 +425,15 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
     )
     def test_no_sink_degenerates_to_ring_buffer(self, sink_size):
         """With sink_size=0, behavior should match a plain ring buffer."""
+        window_size = 100
         params = ModelArgs(
-            use_kv_cache=True, enable_dynamic_shape=True, max_context_len=256
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+            max_context_len=128,
+            max_seq_len=64,
         )
         rope = RopeWithAttentionSink(
-            params=params, window_size=self.window_size, sink_size=0
+            params=params, window_size=window_size, sink_size=0
         )
         cache = KVCacheWithAttentionSink(
             n_heads=params.n_heads,
@@ -384,11 +441,16 @@ class KVCacheWithAttentionSinkTest(unittest.TestCase):
             enable_dynamic_shape=params.enable_dynamic_shape,
             rope=rope,
             max_batch_size=1,
-            window_size=self.window_size,
+            window_size=window_size,
             sink_size=0,
+            max_context_length=params.max_context_len,
+            max_seq_len=params.max_seq_len,
             dtype=self.dtype,
         )
-        cache_size = self.window_size * 2  # 56
+        cache_size = window_size + params.max_seq_len
+        self.assertEqual(cache_size, 164)
+        self.assertEqual(rope.ring_size, cache_size)
+        self.assertEqual(cache.max_context_length, cache_size)
 
         # Fill and wrap
         k_init, v_init = self._rand_kv(cache_size)
@@ -434,7 +496,10 @@ class AttentionSinkE2ETest(unittest.TestCase):
 
         model = construct_transformer(args)
         model = enable_attention_sink(
-            model, params=args, sink_size=sink_size, window_size=window_size
+            model,
+            params=args,
+            sink_size=sink_size,
+            window_size=window_size,
         )
 
         if use_custom_sdpa:
@@ -502,12 +567,12 @@ class AttentionSinkE2ETest(unittest.TestCase):
         """Generate tokens well beyond the KV cache size using standard SDPA."""
         sink_size = 4
         window_size = 16
-        # KV cache size = sink_size + window_size * 2 = 36
+        # KV cache size = sink_size + window_size + max_seq_len = 52
         # max_context_len = 128 (for RoPE table)
         args = self._make_args(max_context_len=128)
         model = self._build_model(args, sink_size, window_size, use_custom_sdpa=False)
 
-        # Generate 80 tokens — well beyond KV cache size of 36
+        # Generate 80 tokens — beyond the KV cache size of 52
         outputs = self._run_generation(model, args, num_tokens=80)
 
         self.assertEqual(len(outputs), 77)  # 1 prefill + 76 decode steps
@@ -520,10 +585,13 @@ class AttentionSinkE2ETest(unittest.TestCase):
         """Generate tokens beyond max_context_len with RoPE position remapping."""
         sink_size = 4
         window_size = 16
-        # KV cache size = 36, max_context_len = 64
+        # With max_seq_len omitted, the cache is capped at max_context_len.
         # Generate 100 tokens — well beyond max_context_len
         args = self._make_args(max_context_len=64)
+        args.max_seq_len = None
         model = self._build_model(args, sink_size, window_size, use_custom_sdpa=False)
+        cache = model.layers[0].attention.kv_cache
+        self.assertEqual(cache.max_context_length, 84)
 
         outputs = self._run_generation(model, args, num_tokens=100)
 
@@ -537,10 +605,9 @@ class AttentionSinkE2ETest(unittest.TestCase):
     def test_chunked_prefill_across_the_ring_wrap(self):
         """Chunked prefill where a chunk spans the ring wrap.
 
-        sink_size=4, window_size=16, so the ring is slots [4, 36). Feeding 5
-        tokens at a time puts chunk starts at 0, 5, ..., 95. The chunk at 35
-        covers positions 35..39 and needs rows 35, 4, 5, 6, 7; the chunk at 65
-        covers 65..69 and needs rows 33, 34, 35, 4, 5. Both span the wrap.
+        sink_size=4, window_size=16, and max_seq_len=48, so the ring is slots
+        [4, 68). Feeding 40 tokens at a time exceeds the old 2x-window ring and
+        crosses the new ring boundary on the second chunk.
 
         The other beyond-context-window tests decode one token at a time, and a
         chunk of one can never span the wrap however far the position runs, so
@@ -554,27 +621,32 @@ class AttentionSinkE2ETest(unittest.TestCase):
         """
         sink_size = 4
         window_size = 16
-        args = self._make_args(max_context_len=64)
+        chunk_size = 40
+        args = self._make_args(max_context_len=128)
+        args.max_seq_len = 48
 
         torch.manual_seed(0)
         model = self._build_model(args, sink_size, window_size)
-        tokens = torch.randint(0, args.vocab_size, (1, 100))
+        tokens = torch.randint(0, args.vocab_size, (1, 80))
 
-        chunked = self._feed_in_chunks(copy.deepcopy(model), tokens, chunk_size=5)
+        chunked = self._feed_in_chunks(
+            copy.deepcopy(model), tokens, chunk_size=chunk_size
+        )
         one_at_a_time = self._feed_in_chunks(copy.deepcopy(model), tokens, chunk_size=1)
 
-        self.assertEqual(len(chunked), 20)
-        self.assertEqual(len(one_at_a_time), 100)
+        self.assertEqual(len(chunked), 2)
+        self.assertEqual(len(one_at_a_time), 80)
 
         # generate_full_logits is off, so each call returns logits for its last
         # position only. How the input was chunked must not change the result:
-        # chunk i ends on the same token as one_at_a_time[5 * i + 4].
+        # chunk i ends on the same token as the corresponding decode call.
         for i, out in enumerate(chunked):
             self.assertTrue(torch.isfinite(out).all(), f"chunk {i} is not finite")
             torch.testing.assert_close(
                 out,
-                one_at_a_time[5 * i + 4],
-                msg=lambda m, i=i: f"chunk {i}, positions {5 * i}..{5 * i + 4}, "
+                one_at_a_time[chunk_size * (i + 1) - 1],
+                msg=lambda m, i=i: f"chunk {i}, positions {chunk_size * i}.."
+                f"{chunk_size * (i + 1) - 1}, "
                 f"disagrees with feeding the same tokens one at a time:\n{m}",
             )
 
@@ -599,7 +671,7 @@ class AttentionSinkE2ETest(unittest.TestCase):
             found_custom_cache, "Expected CustomKVCacheWithAttentionSink in model"
         )
 
-        # Generate 80 tokens — well beyond KV cache size of 36
+        # Generate 80 tokens — beyond the KV cache size of 52
         outputs = self._run_generation(model, args, num_tokens=80)
 
         self.assertEqual(len(outputs), 77)
