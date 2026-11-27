@@ -48,12 +48,12 @@ DEFINE_double(
 DEFINE_int32(
     seq_len,
     128,
-    "DEPRECATED: Please use max_seq_len instead. Total number of tokens to generate (prompt + output). Defaults to max_seq_len. If the number of input tokens + seq_len > max_seq_len, the output will be truncated to max_seq_len tokens.");
+    "DEPRECATED: Please use --max_new_tokens instead. Maximum total sequence length, including the prompt and generated output. Generation is limited by the model's context length.");
 
 DEFINE_int32(
     max_new_tokens,
     -1,
-    "Total number of tokens to generate, excluding the prompt, will be capped by max_seq_len - # prompt tokens.");
+    "Maximum number of new tokens to generate, excluding the prompt. Generation is capped by the model's context length minus the prompt length.");
 
 DEFINE_int32(
     cpu_threads,
