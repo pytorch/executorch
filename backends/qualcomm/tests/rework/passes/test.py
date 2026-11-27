@@ -316,6 +316,14 @@ def test_insert_io_qdq(request, kwargs):
     InsertIOQDQ.test(request, kwargs)  # noqa: F405
 
 
+@enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
+@repack_pass_fixtures
+def test_insert_io_qdq_normalizes_wide_activation_container_dtype(request, kwargs):
+    InsertIOQDQ.test_wide_activation_container_dtype_normalized(  # noqa: F405
+        request, kwargs
+    )
+
+
 @enumerate_backends()
 @repack_pass_fixtures
 def test_expand_broadcast_tensor_shape(request, kwargs):
@@ -393,6 +401,22 @@ def test_lift_constant_scalar_operands(request, kwargs):
 @repack_pass_fixtures
 def test_lpai_partition_fallback_support(request, kwargs):
     LpaiPartitionFallbackSupport.test(request, kwargs)  # noqa: F405
+
+
+@enumerate_backends([QnnExecuTorchBackendType.kLpaiBackend])
+@repack_pass_fixtures
+def test_lpai_partition_fallback_support_16a8w(request, kwargs):
+    LpaiPartitionFallbackSupport.test_16a8w_normalizes_container_dtype(  # noqa: F405
+        request, kwargs
+    )
+
+
+def test_normalize_dtype(subtests):
+    NormalizeDtype.test(subtests)  # noqa: F405
+
+
+def test_deduce_dtype(subtests):
+    DeduceDtype.test(subtests)  # noqa: F405
 
 
 @enumerate_backends([QnnExecuTorchBackendType.kHtpBackend])
