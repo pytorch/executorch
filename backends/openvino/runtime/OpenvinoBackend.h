@@ -26,6 +26,7 @@ namespace backends {
 namespace openvino {
 
 struct ExecutionHandle {
+  ov_core_t* core = nullptr;
   ov_compiled_model_t* compiled_model = nullptr;
   ov_infer_request_t* infer_request = nullptr;
   // A buffer OpenVINO owns for each output whose size can change, made on

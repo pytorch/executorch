@@ -185,7 +185,6 @@ endif()
 
 # Openvino backend
 if(TARGET openvino_backend)
-  find_package(OpenVINO REQUIRED)
   list(APPEND link_libraries openvino_backend)
   executorch_target_link_options_shared_lib(openvino_backend)
 endif()
