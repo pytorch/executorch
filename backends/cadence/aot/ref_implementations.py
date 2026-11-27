@@ -1533,6 +1533,46 @@ def quantized_w8a32_conv(
     return output
 
 
+@impl_tracked(m, "quantized_w8a32_conv2d")
+def quantized_w8a32_conv2d(
+    src: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+    stride_w: int,
+) -> torch.Tensor:
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    assert src.dtype == torch.float32
+    # src: [N, H=1, W, C] (NHWC format)
+    # weight: [OC, H=1, K, IC] (OHWI format)
+    assert len(src.shape) == 4
+    assert len(weight.shape) == 4
+    out_channels = weight.shape[0]
+    in_channels = weight.shape[3]
+    assert (out_channels % 4) == 0, "out_channels must be multiple of 4 for SIMD"
+    assert (in_channels % 4) == 0, "in_channels must be multiple of 4 for SIMD"
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+    # Squeeze H dim: [N, 1, W, C] -> [N, W, C], then permute to NCL: [N, C, W]
+    src_ncl = src.squeeze(1).permute(0, 2, 1)
+    # Squeeze H dim: [OC, 1, K, IC] -> [OC, K, IC], then permute to OIK: [OC, IC, K]
+    weight_oik = dequant_weight.squeeze(1).permute(0, 2, 1)
+    output = F.conv1d(
+        src_ncl,
+        weight_oik,
+        bias=dequant_bias,
+        stride=stride_w,
+        padding=0,
+        dilation=1,
+        groups=1,
+    )
+    # output is [N, OC, out_W] in NCL format
+    # Permute to NWC: [N, out_W, OC], then unsqueeze H dim: [N, 1, out_W, OC]
+    return output.permute(0, 2, 1).unsqueeze(1)
+
+
 @impl_tracked(m, "quantized_w8a32_linear")
 def quantized_w8a32_linear(
     src: torch.Tensor,
@@ -1636,6 +1676,138 @@ def quantized_w8a32_gru(
         batch_size, input_dim, hidden_dim
     )
     return torch.stack([new_hidden_expanded, new_hidden_expanded], dim=0)
+
+
+@impl_tracked(m, "quantized_w8a32_transpose_conv2d")
+def quantized_w8a32_transpose_conv2d(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+    stride_w: int,
+) -> torch.Tensor:
+    # input: [N, H=1, W, IC] (NHWC format)
+    # weight: [OC, kH=1, kW, IC] (OHWI format)
+    # output: [N, H=1, W_out, OC] (NHWC format)
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    assert input.dtype == torch.float32
+    assert len(input.shape) == 4
+    assert len(weight.shape) == 4
+
+    in_channels = input.shape[3]
+    assert (in_channels % 4) == 0, "in_channels must be multiple of 4 for SIMD"
+
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+
+    # Squeeze H dim: [N, 1, W, IC] -> [N, W, IC], then permute to NCL: [N, IC, W]
+    src_ncl = input.squeeze(1).permute(0, 2, 1)
+    # Squeeze H dim: [OC, 1, kW, IC] -> [OC, kW, IC], then permute to IOK: [IC, OC, kW]
+    weight_iok = dequant_weight.squeeze(1).permute(2, 0, 1)
+
+    output = F.conv_transpose1d(
+        src_ncl,
+        weight_iok,
+        bias=dequant_bias,
+        stride=stride_w,
+        padding=0,
+        output_padding=0,
+        groups=1,
+        dilation=1,
+    )
+
+    # output is [N, OC, W_out] in NCL format
+    # Permute to NWC: [N, W_out, OC], then unsqueeze H dim: [N, 1, W_out, OC]
+    return output.permute(0, 2, 1).unsqueeze(1)
+
+
+@impl_tracked(m, "quantized_w8a32_layernorm")
+def quantized_w8a32_layernorm(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    assert weight.dtype == torch.int8
+    assert bias.dtype == torch.int8
+    assert input.dtype == torch.float32
+    assert len(weight.shape) == 1
+    assert len(bias.shape) == 1
+
+    channels = input.shape[-1]
+    assert weight.shape[0] == channels
+    assert bias.shape[0] == channels
+
+    dequant_weight = weight.float() * w_scale
+    dequant_bias = bias.float() * b_scale
+    return F.layer_norm(input, [channels], weight=dequant_weight, bias=dequant_bias)
+
+
+@impl_tracked(m, "quantized_w8a32_split_gru")
+def quantized_w8a32_split_gru(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    w_i_0: torch.Tensor, w_i_0_scale: float,
+    w_h_0: torch.Tensor, w_h_0_scale: float,
+    b_i_0: torch.Tensor, b_i_0_scale: float,
+    b_h_0: torch.Tensor, b_h_0_scale: float,
+    w_i_1: torch.Tensor, w_i_1_scale: float,
+    w_h_1: torch.Tensor, w_h_1_scale: float,
+    b_i_1: torch.Tensor, b_i_1_scale: float,
+    b_h_1: torch.Tensor, b_h_1_scale: float,
+    num_splits: int,
+) -> torch.Tensor:
+    assert num_splits == 2
+    return split_gru(
+        inputs,
+        hidden,
+        w_i_0.float() * w_i_0_scale,
+        w_h_0.float() * w_h_0_scale,
+        b_i_0.float() * b_i_0_scale,
+        b_h_0.float() * b_h_0_scale,
+        w_i_1.float() * w_i_1_scale,
+        w_h_1.float() * w_h_1_scale,
+        b_i_1.float() * b_i_1_scale,
+        b_h_1.float() * b_h_1_scale,
+    )
+
+
+@impl_tracked(m, "split_gru")
+def split_gru(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    w_i_0: torch.Tensor,
+    w_h_0: torch.Tensor,
+    b_i_0: torch.Tensor,
+    b_h_0: torch.Tensor,
+    w_i_1: torch.Tensor,
+    w_h_1: torch.Tensor,
+    b_i_1: torch.Tensor,
+    b_h_1: torch.Tensor,
+) -> torch.Tensor:
+    # Split i is a GRU over inputs[..., i::2] and the i-th half of hidden. The
+    # new hidden state is returned broadcast to (B, S, H).
+    num_splits = 2
+    h_chunks = torch.chunk(hidden, num_splits, dim=-1)
+    weights = [(w_i_0, w_h_0, b_i_0, b_h_0), (w_i_1, w_h_1, b_i_1, b_h_1)]
+
+    new_hiddens: list[torch.Tensor] = []
+    for i, (w_i, w_h, b_i, b_h) in enumerate(weights):
+        gru = nn.GRU(w_i.shape[1], w_h.shape[1], batch_first=True)
+        with torch.no_grad():
+            gru.weight_ih_l0.copy_(w_i)
+            gru.weight_hh_l0.copy_(w_h)
+            gru.bias_ih_l0.copy_(b_i)
+            gru.bias_hh_l0.copy_(b_h)
+            _, h = gru(inputs[..., i::num_splits], h_chunks[i].contiguous())
+        new_hiddens.append(h)
+
+    new_hidden = torch.cat(new_hiddens, dim=-1)[0]  # (B, H)
+    batch, seq = inputs.shape[0], inputs.shape[1]
+    return new_hidden.unsqueeze(1).expand(batch, seq, -1).contiguous()
 
 
 @impl_tracked(m, "quantized_conv2d_nhwc.per_tensor")

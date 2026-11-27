@@ -738,6 +738,54 @@ lib.define(
 )
 
 lib.define(
+    "quantized_w8a32_transpose_conv2d(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, int stride_w) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_transpose_conv2d.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, int stride_w, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_w8a32_conv2d(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, int stride_w) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_conv2d.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, int stride_w, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "quantized_w8a32_layernorm(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_layernorm.out(Tensor input, Tensor weight, float w_scale, Tensor bias, float b_scale, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
+    "split_gru(Tensor inputs, Tensor hidden, "
+    "Tensor w_i_0, Tensor w_h_0, Tensor b_i_0, Tensor b_h_0, "
+    "Tensor w_i_1, Tensor w_h_1, Tensor b_i_1, Tensor b_h_1) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_split_gru(Tensor inputs, Tensor hidden, "
+    "Tensor w_i_0, float w_i_0_scale, Tensor w_h_0, float w_h_0_scale, "
+    "Tensor b_i_0, float b_i_0_scale, Tensor b_h_0, float b_h_0_scale, "
+    "Tensor w_i_1, float w_i_1_scale, Tensor w_h_1, float w_h_1_scale, "
+    "Tensor b_i_1, float b_i_1_scale, Tensor b_h_1, float b_h_1_scale, "
+    "int num_splits) -> Tensor"
+)
+
+lib.define(
+    "quantized_w8a32_split_gru.out(Tensor inputs, Tensor hidden, "
+    "Tensor w_i_0, float w_i_0_scale, Tensor w_h_0, float w_h_0_scale, "
+    "Tensor b_i_0, float b_i_0_scale, Tensor b_h_0, float b_h_0_scale, "
+    "Tensor w_i_1, float w_i_1_scale, Tensor w_h_1, float w_h_1_scale, "
+    "Tensor b_i_1, float b_i_1_scale, Tensor b_h_1, float b_h_1_scale, "
+    "int num_splits, *, Tensor(a!) out) -> Tensor(a!)"
+)
+
+lib.define(
     "slice_scatter_(Tensor(a!) self, Tensor src, int dim=0, SymInt? start=None, SymInt? end=None, SymInt step=1) -> Tensor(a!)"
 )
 
@@ -3450,6 +3498,135 @@ def quantized_w8a32_gru_meta(
     return hidden.new_empty(
         (2, inputs.shape[0], inputs.shape[1], hidden.shape[-1]), dtype=torch.float32
     )
+
+
+@register_fake("cadence::quantized_w8a32_transpose_conv2d")
+def quantized_w8a32_transpose_conv2d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+    stride_w: int,
+) -> torch.Tensor:
+    # input: [N, H=1, W, IC] (NHWC format)
+    # weight: [OC, kH=1, kW, IC] (OHWI format)
+    # output: [N, H=1, W_out, OC] (NHWC format)
+    assert len(input.shape) == 4
+    assert len(weight.shape) == 4
+    assert input.dtype == torch.float32
+    assert weight.dtype == torch.int8
+
+    batch_size = input.shape[0]
+    H = input.shape[1]
+    W = input.shape[2]
+
+    out_channels = weight.shape[0]
+    kW = weight.shape[2]
+
+    # conv_transpose output: W_out = (W - 1) * stride + kW
+    W_out = (W - 1) * stride_w + kW
+
+    output_shape = (batch_size, H, W_out, out_channels)
+    return input.new_empty(output_shape, dtype=input.dtype)
+
+
+@register_fake("cadence::quantized_w8a32_conv2d")
+def quantized_w8a32_conv2d_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+    stride_w: int,
+) -> torch.Tensor:
+    # input: [N, H=1, W, IC] (NHWC format)
+    # weight: [OC, kH=1, kW, IC] (OHWI format)
+    # output: [N, H=1, W_out, OC] (NHWC format)
+    assert len(input.shape) == 4
+    assert len(weight.shape) == 4
+    assert input.dtype == torch.float32
+    assert weight.dtype == torch.int8
+    batch_size = input.shape[0]
+    input_length = input.shape[2]
+    in_channels = input.shape[3]
+    out_channels = weight.shape[0]
+    kernel_size = weight.shape[2]
+    assert in_channels == weight.shape[3]
+    output_length = (input_length - kernel_size) // stride_w + 1
+    output_shape = (batch_size, 1, output_length, out_channels)
+    return input.new_empty(output_shape, dtype=input.dtype)
+
+
+@register_fake("cadence::split_gru")
+def split_gru_meta(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    w_i_0: torch.Tensor,
+    w_h_0: torch.Tensor,
+    b_i_0: torch.Tensor,
+    b_h_0: torch.Tensor,
+    w_i_1: torch.Tensor,
+    w_h_1: torch.Tensor,
+    b_i_1: torch.Tensor,
+    b_h_1: torch.Tensor,
+) -> torch.Tensor:
+    return hidden.new_empty(
+        (inputs.shape[0], inputs.shape[1], hidden.shape[-1]),
+        dtype=torch.float32,
+    )
+
+
+@register_fake("cadence::quantized_w8a32_split_gru")
+def quantized_w8a32_split_gru_meta(
+    inputs: torch.Tensor,
+    hidden: torch.Tensor,
+    w_i_0: torch.Tensor,
+    w_i_0_scale: float,
+    w_h_0: torch.Tensor,
+    w_h_0_scale: float,
+    b_i_0: torch.Tensor,
+    b_i_0_scale: float,
+    b_h_0: torch.Tensor,
+    b_h_0_scale: float,
+    w_i_1: torch.Tensor,
+    w_i_1_scale: float,
+    w_h_1: torch.Tensor,
+    w_h_1_scale: float,
+    b_i_1: torch.Tensor,
+    b_i_1_scale: float,
+    b_h_1: torch.Tensor,
+    b_h_1_scale: float,
+    num_splits: int,
+) -> torch.Tensor:
+    assert inputs.dtype == torch.float32
+    assert hidden.dtype == torch.float32
+    for weight in (w_i_0, w_h_0, w_i_1, w_h_1):
+        assert weight.dtype == torch.int8
+    return hidden.new_empty(
+        (inputs.shape[0], inputs.shape[1], hidden.shape[-1]), dtype=torch.float32
+    )
+
+
+@register_fake("cadence::quantized_w8a32_layernorm")
+def quantized_w8a32_layernorm_meta(
+    input: torch.Tensor,
+    weight: torch.Tensor,
+    w_scale: float,
+    bias: torch.Tensor,
+    b_scale: float,
+) -> torch.Tensor:
+    assert len(weight.shape) == 1
+    assert len(bias.shape) == 1
+    assert input.dtype == torch.float32
+    assert weight.dtype == torch.int8
+    assert weight.shape[0] == input.shape[-1], (
+        f"Weight size ({weight.shape[0]}) must match input channels ({input.shape[-1]})"
+    )
+    assert bias.shape[0] == input.shape[-1], (
+        f"Bias size ({bias.shape[0]}) must match input channels ({input.shape[-1]})"
+    )
+    return input.new_empty(input.shape, dtype=input.dtype)
 
 
 @register_fake("cadence::slice_scatter_")
