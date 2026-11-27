@@ -108,48 +108,6 @@ def _export_cuda_sampler_methods(
 
 
 STATIC_DRAFT_PREFIX = "draft_forward_"
-VERIFY_METHOD = "dflash_verify"
-VERIFY_ARGMAX_METHOD = "dflash_verify_argmax"
-
-
-def cuda_owner_verifier_programs(
-    vocab_size: int, max_owners: int, block: int
-) -> dict[str, torch.export.ExportedProgram]:
-    """Batched on-device verification of up to ``max_owners`` draft blocks."""
-    from executorch.examples.models.muse_glimmer.model.dflash_token_sampler import (
-        DFlashOwnerArgmaxVerifier,
-        DFlashOwnerVerifier,
-    )
-    from torch.export import Dim, export
-
-    if block < 3:
-        raise ValueError("CUDA DFlash verifiers need a block of at least 3")
-    owners = (
-        Dim("verify_owners", min=1, max=max_owners) if max_owners > 1 else Dim.STATIC
-    )
-    # A one-proposal width would specialize its size-1 proposal axis.
-    width = Dim("verify_width", min=3, max=block)
-    logits = torch.zeros(max_owners, block, vocab_size)
-    candidates = torch.zeros(max_owners, block, dtype=torch.long)
-    params = torch.zeros(max_owners, block + 3)
-    return {
-        VERIFY_METHOD: export(
-            DFlashOwnerVerifier(),
-            (logits, candidates, params),
-            dynamic_shapes=(
-                {0: owners, 1: width},
-                {0: owners, 1: width},
-                {0: owners, 1: width + 3},
-            ),
-            strict=True,
-        ),
-        VERIFY_ARGMAX_METHOD: export(
-            DFlashOwnerArgmaxVerifier(),
-            (logits, candidates),
-            dynamic_shapes=({0: owners, 1: width}, {0: owners, 1: width}),
-            strict=True,
-        ),
-    }
 
 
 def _cuda_propagate_device_config() -> dict[str, PropagateDeviceConfig]:

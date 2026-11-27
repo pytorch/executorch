@@ -42,10 +42,6 @@ inline constexpr char kMaxSeqs[] = "get_draft_offgraph_kv_max_seqs";
 inline constexpr char kSeqCapacity[] = "get_draft_offgraph_kv_seq_capacity";
 // Static draft_forward_{N}: N owners, each with at most one block of context.
 inline constexpr char kStaticForwardPrefix[] = "draft_forward_";
-// On-device verification of [owners, width] candidates; see
-// model/dflash_token_sampler.py.
-inline constexpr char kVerify[] = "dflash_verify";
-inline constexpr char kVerifyArgmax[] = "dflash_verify_argmax";
 inline constexpr int kOwnerLimit = 4;
 
 struct Burst {
@@ -131,25 +127,6 @@ bool pad_to_static(
     int block,
     std::size_t row_bytes);
 
-// Reusable device memory for small host-built inputs.
-class DeviceStaging {
- public:
-  ~DeviceStaging();
-  DeviceStaging() = default;
-  DeviceStaging(const DeviceStaging&) = delete;
-  DeviceStaging& operator=(const DeviceStaging&) = delete;
-  DeviceStaging(DeviceStaging&&) = delete;
-  DeviceStaging& operator=(DeviceStaging&&) = delete;
-  // Device copies of each (data, bytes) part, ordered on stream. Earlier
-  // uploads must be consumed first: they share one allocation.
-  std::optional<std::vector<void*>> upload(
-      const std::vector<std::pair<const void*, std::size_t>>& parts,
-      void* stream);
-
- private:
-  void* device_ = nullptr;
-  std::size_t capacity_ = 0;
-};
 } // namespace cuda_dflash_detail
 
 struct CudaDFlashStats {
@@ -180,8 +157,8 @@ struct CudaDFlashStats {
 // draft like any other context. Decode drafts
 // run the static draft_forward_{N} in CUDA graphs, as the target's static
 // methods do; longer contexts drain through the dynamic draft_forward. Drafts
-// are greedy; dflash_verify accepts or resamples them under each session's
-// sampling on the device, so only token IDs return to the host.
+// are greedy; verification samples every target row with the target sampler
+// and accepts proposals while they match its draws.
 class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
  public:
   static runtime::Result<MuseGlimmerBackend> create(
@@ -222,8 +199,6 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
     std::int32_t target_id;
     std::int32_t draft_id;
     int frontier = 0;
-    // Last emitted correction/bonus, not yet consumed by the target cache.
-    std::optional<batching::Token> pending;
     // Host-owned committed BF16 rows [draft frontier, target frontier).
     // Verification appends only the consumed anchor and accepted proposals.
     std::vector<std::uint8_t> hidden;
@@ -247,15 +222,16 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
       const RawStep& step,
       const std::vector<batching::SessionId>& token_owners,
       std::vector<batching::Token>& predictions);
-  // Runs the verification step and the on-device verifier; results holds
-  // [accepted, correction] per owner.
+  // Runs the verification step; targets holds the target sample of every row.
   bool verify(
       const RawStep& step,
       const std::vector<batching::SessionId>& owners,
-      const std::vector<std::int64_t>& candidates,
-      std::vector<std::int64_t>& results);
-  std::vector<float> verify_params(const State& state, batching::Position first)
-      const;
+      std::vector<batching::Token>& targets);
+  // Target sampler row for the token at position. Its coin depends only on the
+  // seed and position, so preamble and verification draw the same token.
+  std::array<float, 4> sample_params(
+      const State& state,
+      batching::Position position) const;
   bool drain(batching::SessionId owner);
   bool draft(
       const std::vector<batching::SessionId>& owners,
@@ -286,7 +262,6 @@ class MuseGlimmerCudaDFlashExecutor final : public batching::Executor {
   std::shared_ptr<MuseGlimmerModelEmbeddings> embeddings_;
   CudaDFlashStats stats_;
   cuda_dflash_detail::HiddenSnapshot verification_hidden_;
-  cuda_dflash_detail::DeviceStaging verify_inputs_;
   // static_drafts_[n]: the program has draft_forward_{n}.
   std::array<bool, cuda_dflash_detail::kOwnerLimit + 1> static_drafts_{};
   bool initialized_ = false;
