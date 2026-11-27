@@ -1018,6 +1018,28 @@ class TestProgramManagers(unittest.TestCase):
         except SpecViolationError:
             self.fail("Should not error out on linalg_vector_norm op")
 
+    def test_edge_dialect_masked_select(self):
+        class MaskedSelectModel(torch.nn.Module):
+            def forward(self, x: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+                return torch.masked_select(x, mask)
+
+        inputs = (
+            torch.tensor([1.0, -1.0, 2.0, -3.0]),
+            torch.tensor([True, False, True, False]),
+        )
+        ep = export(MaskedSelectModel(), inputs, strict=True)
+        edge = to_edge(ep, compile_config=EdgeCompileConfig(_check_ir_validity=True))
+        self.assertEqual(
+            self._count_nodes(
+                edge.exported_program().graph_module,
+                [exir_ops.edge.aten.masked_select.default],
+            ),
+            1,
+        )
+        et = edge.to_executorch()
+        self.assertIsNotNone(et.buffer)
+        self.assertGreater(len(et.buffer), 0)
+
     @staticmethod
     def _count_nodes(graph_module, targets):
         """Count nodes in graph_module whose target matches any in targets."""
