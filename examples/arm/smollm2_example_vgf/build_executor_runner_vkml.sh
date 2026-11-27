@@ -41,6 +41,7 @@ cmake \
     -DEXECUTORCH_BUILD_KERNELS_QUANTIZED_AOT=ON \
     -DEXECUTORCH_ENABLE_LOGGING=ON \
     -DEXECUTORCH_BUILD_DEVTOOLS=ON \
+    -DEXECUTORCH_ENABLE_EVENT_TRACER=ON \
     -DPYTHON_EXECUTABLE="$(which python3)"
 
 cmake --build "${output_folder}" --parallel
