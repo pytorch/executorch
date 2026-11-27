@@ -379,7 +379,7 @@ run_silero_vad_e2e_ethos_u() {
     local example_dir="${et_root_dir}/examples/arm/silero_vad_example_ethos_u"
     local work_root="${et_root_dir}/arm_test/silero_vad_ootb_smoke"
     local model_dir="${work_root}/silero-vad"
-    local model_revision="dbacf536adadf42210f37ae50fbaf75f6235b3cf"
+    local model_ref="v6.2.2"
     local jit_path="${model_dir}/src/silero_vad/data/silero_vad.jit"
     local calibration_audio_path="${work_root}/silero_vad_calibration.wav"
     local validation_audio_path="${work_root}/silero_vad_validation.wav"
@@ -411,13 +411,13 @@ run_silero_vad_e2e_ethos_u() {
     cmake --preset arm-baremetal -B "${et_build_dir}"
     cmake --build "${et_build_dir}" --target install -j"$n_proc"
 
-    if [[ ! -f "${jit_path}" || "$(git -C "${model_dir}" rev-parse HEAD 2>/dev/null)" != "${model_revision}" ]]; then
+    if [[ ! -f "${jit_path}" || "$(git -C "${model_dir}" describe --tags --exact-match HEAD 2>/dev/null)" != "${model_ref}" ]]; then
         echo "${FUNCNAME}: Cloning Silero VAD repository"
         rm -rf "${model_dir}"
         git init "${model_dir}"
         git -C "${model_dir}" remote add origin https://github.com/snakers4/silero-vad.git
-        git -C "${model_dir}" fetch --depth 1 origin "${model_revision}"
-        git -C "${model_dir}" checkout --detach FETCH_HEAD
+        git -C "${model_dir}" fetch --depth 1 origin "refs/tags/${model_ref}:refs/tags/${model_ref}"
+        git -C "${model_dir}" checkout --detach "${model_ref}"
     else
         echo "${FUNCNAME}: Reusing JIT model at ${jit_path}"
     fi
