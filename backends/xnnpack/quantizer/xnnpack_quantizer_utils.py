@@ -221,7 +221,7 @@ def _annotate_linear_relu(
             input_qspec_map[bias] = bias_qspec
             partition.append(bias)
 
-        if _is_annotated(partition):
+        if _is_annotated([linear_node, relu_node]):
             continue
 
         if filter_fn and not filter_fn(linear_node):
@@ -313,7 +313,7 @@ def _do_annotate_conv(
             input_qspec_map[bias] = get_bias_qspec(quantization_config)
             partition.append(bias)
 
-        if _is_annotated(partition) or skip:
+        if _is_annotated([conv_node]) or skip:
             continue
 
         if filter_fn and not filter_fn(conv_node):
@@ -374,7 +374,7 @@ def _do_annotate_conv_relu(
             input_qspec_map[bias] = get_bias_qspec(quantization_config)
             partition.append(bias)
 
-        if _is_annotated(partition):
+        if _is_annotated([conv_node, relu_node]):
             continue
 
         if (is_conv_transpose and groups != 1) or not _is_1d_or_2d_conv(weight_shape):
@@ -609,7 +609,7 @@ def _do_annotate_conv_bn(  # noqa: C901
         partition = [conv_node, weight_node]
         if bias_node is not None:
             partition.append(bias_node)
-        if _is_annotated(partition):
+        if _is_annotated([conv_node]):
             continue
         if filter_fn and not filter_fn(conv_node):
             continue
