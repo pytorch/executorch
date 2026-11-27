@@ -54,9 +54,8 @@ jobs:
         .ci/scripts/unittest-linux.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   macos:
-    uses: pytorch/test-infra/.github/workflows/macos_job.yml@main
+    uses: ./.github/workflows/_macos_job_venv.yml
     with:
-      default-packages: ""
       runner: macos-m1-stable
       python-version: '3.11'
       submodules: 'recursive'
@@ -64,8 +63,6 @@ jobs:
       timeout: 120
       script: |
         set -eux
-        # This is needed to get the prebuilt PyTorch wheel from S3
-        ${CONDA_RUN} --no-capture-output pip install awscli==1.37.21
         .ci/scripts/unittest-macos.sh --build-tool "${{ inputs.build-tool }}" --build-mode "${{ inputs.build-mode }}" --editable "${{ inputs.editable }}"
 
   windows:

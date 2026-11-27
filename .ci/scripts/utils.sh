@@ -180,8 +180,10 @@ torch.linalg.qr(torch.randn(4, 4))
       exit 1
     fi
 
-    # Only AWS runners have access to S3
-    if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]]; then
+    # Only AWS runners have access to S3. On macOS, only cache wheels built in
+    # the conda env that the other macOS jobs install them into.
+    if command -v aws && [[ -z "${GITHUB_RUNNER:-}" ]] &&
+      [[ "${system_name}" != "Darwin" || -n "${CONDA_PREFIX:-}" ]]; then
       for wheel_path in dist/*.whl; do
         local wheel_name=$(basename "${wheel_path}")
         echo "Caching ${wheel_name}"

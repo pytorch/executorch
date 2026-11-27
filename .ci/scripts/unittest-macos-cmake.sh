@@ -24,9 +24,9 @@ AOTI_SKIPS=(
   --deselect=extension/llm/modules/test/test_attention.py::AttentionTest::test_attention_aoti
 )
 
-${CONDA_RUN} bash .ci/scripts/tests/vulkan/test_vulkan_cmake_package.sh
+${CONDA_RUN:-} bash .ci/scripts/tests/vulkan/test_vulkan_cmake_package.sh
 
-${CONDA_RUN} pytest -n auto --cov=./ --cov-report=xml "${AOTI_SKIPS[@]}"
+${CONDA_RUN:-} pytest -n auto --cov=./ --cov-report=xml "${AOTI_SKIPS[@]}"
 # Run gtest
 LLVM_PROFDATA="xcrun llvm-profdata" LLVM_COV="xcrun llvm-cov" \
-${CONDA_RUN} test/run_oss_cpp_tests.sh
+${CONDA_RUN:-} test/run_oss_cpp_tests.sh

@@ -13,4 +13,18 @@ install_conda() {
   popd || return
 }
 
-install_conda
+# Without a conda env, e.g. under _macos_job_venv.yml, install the build tools
+# from conda-env-ci.txt with pip. libomp comes from Homebrew in setup-macos.sh,
+# the rest is only needed to build PyTorch from source.
+install_pip() {
+  local packages
+  packages=$(sed -n -E 's/^(cmake|ninja)=(.+)$/\1==\2/p' .ci/docker/conda-env-ci.txt)
+  # shellcheck disable=SC2086
+  python -m pip install --progress-bar off ${packages}
+}
+
+if [[ -n "${CONDA_INSTALL:-}" ]]; then
+  install_conda
+else
+  install_pip
+fi
