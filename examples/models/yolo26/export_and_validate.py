@@ -8,6 +8,7 @@
 
 
 import argparse
+import re
 from itertools import islice
 from typing import Any, Dict, Iterator, Optional, Tuple
 
@@ -89,12 +90,25 @@ def lower_to_openvino(
             sample = transform_fn(sample)
             return pad_to_target(sample, target_input_dims)
 
+        # Keep the one-to-one Detect head in FP32: ignore everything from the
+        # first node of each of its branches to the output. Newer ultralytics no
+        # longer puts detach nodes in front of these branches, so find them by module.
+        model = aten_dialect.module()
+        head_inputs = {}
+        for node in model.graph.nodes:
+            for path, _ in node.meta.get("nn_module_stack", {}).values():
+                if node.op == "call_function" and re.fullmatch(
+                    r".+\.one2one_cv[23]\.\d+", path
+                ):
+                    head_inputs.setdefault(path, node.name)
+        if not head_inputs:
+            raise RuntimeError("Could not find the one-to-one Detect head branches.")
         quantizer = OpenVINOQuantizer(mode=QuantizationMode.INT8_MIXED)
         quantizer.set_ignored_scope(
-            subgraphs=[(["detach", "detach_1", "detach_2"], ["output"])]
+            subgraphs=[(list(head_inputs.values()), ["output"])]
         )
         quantized_model = quantize_pt2e(
-            aten_dialect.module(),
+            model,
             quantizer,
             nncf.Dataset(calibration_dataset, ext_transform_fn),
             subset_size=subset_size,
@@ -232,12 +246,19 @@ def main(
     else:
         calibration_dataset = None
 
-    # Setup pre-processing
+    # Setup pre-processing. nms=False selects the NMS-free head; since
+    # ultralytics 8.4.140 predict() runs on a copy of the model, so export that
+    # fused, warmed-up copy (see YOLO26Model) instead of the cold original.
     np_dummy_tensor = np.ones((input_dims[0], input_dims[1], 3))
-    model.predict(np_dummy_tensor, imgsz=((input_dims[0], input_dims[1])), device="cpu")
+    model.predict(
+        np_dummy_tensor,
+        imgsz=((input_dims[0], input_dims[1])),
+        device="cpu",
+        nms=False,
+    )
 
-    # ultralytics 8.4.133-8.4.139 switch to channels_last in predict(); undo it.
-    pt_model = model.model.to(
+    # predict() converts the copy to channels_last on x86 CPUs; undo it.
+    pt_model = model.predictor.model.model.to(
         torch.device("cpu"), memory_format=torch.contiguous_format
     )
 
