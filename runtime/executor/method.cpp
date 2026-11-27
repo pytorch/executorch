@@ -1735,11 +1735,15 @@ Error Method::execute_instruction() {
         ET_LOG(
             Error,
             "KernelCall failed at instruction %" ET_PRIsize_t ":%" ET_PRIsize_t
-            " in operator %s.%s: 0x%x",
+            " in operator %s%s%s: 0x%x",
             step_state_.chain_idx,
             step_state_.instr_idx,
             op->name()->c_str(),
-            op->overload()->c_str(),
+            (op->overload() != nullptr && op->overload()->size() > 0) ? "."
+                                                                      : "",
+            (op->overload() != nullptr && op->overload()->size() > 0)
+                ? op->overload()->c_str()
+                : "",
             (unsigned int)err);
         for (size_t i = 0; i < args.size(); ++i) {
           ET_LOG(
