@@ -6,6 +6,7 @@
 
 # pyre-unsafe
 
+import math
 import tempfile
 import typing
 import unittest
@@ -3041,6 +3042,46 @@ class TestEmit(unittest.TestCase):
             et_result = et_output[0]
             self.assertTrue(expected.shape == et_result.shape)
             self.assertTrue(torch.allclose(expected, et_result))
+
+    def test_emit_sym_floor(self) -> None:
+        class SymFloorModel(nn.Module):
+            def forward(self, x):
+                return x[: math.floor(x.shape[0] / 3)]
+
+        class SymFloorNegModel(nn.Module):
+            def forward(self, x):
+                return torch.zeros(
+                    -math.floor(-x.shape[0] / 3), x.shape[1], dtype=x.dtype
+                )
+
+        batch_dim = Dim("batch", min=6, max=20)
+        test_inputs = [torch.randn(n, 4) for n in (6, 8, 9, 10, 11, 13, 20)]
+        for label, model in [
+            ("positive", SymFloorModel()),
+            ("negative", SymFloorNegModel()),
+        ]:
+            with self.subTest(case=label):
+                model.eval()
+                with torch.no_grad():
+                    reference_outputs = [model(inp) for inp in test_inputs]
+
+                exported_program = torch.export.export(
+                    model,
+                    (test_inputs[1],),
+                    dynamic_shapes={"x": {0: batch_dim}},
+                )
+                et_program = to_edge(exported_program).to_executorch()
+                op_names = [
+                    op.name
+                    for op in et_program.executorch_program.execution_plan[0].operators
+                ]
+                self.assertIn("executorch_prim::floor", op_names)
+
+                et_module = _load_for_executorch_from_buffer(et_program.buffer)
+                for inp, expected in zip(test_inputs, reference_outputs):
+                    et_result = et_module.forward([inp])[0]
+                    self.assertEqual(expected.shape, et_result.shape)
+                    self.assertTrue(torch.allclose(expected, et_result))
 
     def test_emit_channels_last_constant(self) -> None:
         """Test that channels-last constant tensors are emitted correctly.

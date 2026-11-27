@@ -17,8 +17,11 @@
 #include <executorch/runtime/kernel/kernel_runtime_context.h>
 #include <executorch/runtime/kernel/operator_registry.h>
 #include <executorch/runtime/platform/runtime.h>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <limits>
+#include <utility>
 
 using executorch::aten::SizesType;
 using torch::executor::Error;
@@ -43,6 +46,7 @@ TEST_F(RegisterPrimOpsTest, OpRegistered) {
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_not.Scalar"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_int.Scalar"));
   EXPECT_TRUE(hasOpsFn("executorch_prim::sym_ite.Scalar"));
+  EXPECT_TRUE(hasOpsFn("executorch_prim::floor.Scalar"));
 }
 
 TEST_F(RegisterPrimOpsTest, SymSizeReturnsCorrectValue) {
@@ -775,6 +779,83 @@ TEST_F(RegisterPrimOpsTest, TestCeil) {
   }
 }
 
+TEST_F(RegisterPrimOpsTest, TestFloor) {
+  constexpr double kMinInt64 =
+      static_cast<double>(std::numeric_limits<int64_t>::min());
+  const double kLargestValidDouble = std::nextafter(-kMinInt64, 0.0);
+
+  const std::pair<double, int64_t> double_cases[] = {
+      {0.0, 0},
+      {-0.0, 0},
+      {0.25, 0},
+      {0.5, 0},
+      {0.75, 0},
+      {1.0, 1},
+      {1.75, 1},
+      {-std::numeric_limits<double>::denorm_min(), -1},
+      {-0.001, -1},
+      {-0.5, -1},
+      {-1.0, -1},
+      {-1.5, -2},
+      {-2.5, -3},
+      {9.999999, 9},
+      {kMinInt64, std::numeric_limits<int64_t>::min()},
+      {kLargestValidDouble, int64_t(9223372036854774784LL)},
+  };
+  for (const auto& [in, expected] : double_cases) {
+    EValue values[2] = {EValue(in), EValue(int64_t(-999))};
+    EValue* stack[2] = {&values[0], &values[1]};
+    getOpsFn("executorch_prim::floor.Scalar")(context_, Span<EValue*>(stack));
+    EXPECT_EQ(context_.failure_state(), Error::Ok) << "input=" << in;
+    EXPECT_EQ(stack[1]->toInt(), expected) << "input=" << in;
+  }
+
+  for (int64_t v :
+       {int64_t(0),
+        int64_t(7),
+        int64_t(-3),
+        std::numeric_limits<int64_t>::min(),
+        std::numeric_limits<int64_t>::max()}) {
+    EValue values[2] = {EValue(v), EValue(int64_t(-999))};
+    EValue* stack[2] = {&values[0], &values[1]};
+    getOpsFn("executorch_prim::floor.Scalar")(context_, Span<EValue*>(stack));
+    EXPECT_EQ(context_.failure_state(), Error::Ok) << "input=" << v;
+    EXPECT_EQ(stack[1]->toInt(), v);
+  }
+}
+
+TEST_F(RegisterPrimOpsTest, TestFloorInvalidInputs) {
+  constexpr double kMinInt64 =
+      static_cast<double>(std::numeric_limits<int64_t>::min());
+  const double bad_doubles[] = {
+      std::numeric_limits<double>::quiet_NaN(),
+      std::numeric_limits<double>::infinity(),
+      -std::numeric_limits<double>::infinity(),
+      -kMinInt64,
+      std::nextafter(kMinInt64, -std::numeric_limits<double>::infinity()),
+  };
+  for (double bad : bad_doubles) {
+    context_ = KernelRuntimeContext();
+    EValue values[2] = {EValue(bad), EValue(int64_t(0))};
+    EValue* stack[2] = {&values[0], &values[1]};
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        getOpsFn("executorch_prim::floor.Scalar")(
+            context_, Span<EValue*>(stack)));
+    EXPECT_EQ(context_.failure_state(), Error::InvalidArgument)
+        << "input=" << bad;
+  }
+
+  context_ = KernelRuntimeContext();
+  EValue values[2] = {EValue(true), EValue(int64_t(0))};
+  EValue* stack[2] = {&values[0], &values[1]};
+  ET_EXPECT_KERNEL_FAILURE(
+      context_,
+      getOpsFn("executorch_prim::floor.Scalar")(
+          context_, Span<EValue*>(stack)));
+  EXPECT_EQ(context_.failure_state(), Error::InvalidType);
+}
+
 TEST_F(RegisterPrimOpsTest, TestRound) {
   // Note that Python uses round-to-even for halfway values.
   std::array<double, 10> inputs = {
@@ -1092,7 +1173,7 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
   }
 
-  // Test ceil, round, trunc with a stack of size 1 (missing output)
+  // Test ceil, floor, round, trunc with a stack of size 1 (missing output)
   {
     EValue values[1];
     values[0] = EValue(5.5);
@@ -1103,6 +1184,13 @@ TEST_F(RegisterPrimOpsTest, TestInvalidProgramErrorOnShortStack) {
     ET_EXPECT_KERNEL_FAILURE(
         context_,
         getOpsFn("executorch_prim::ceil.Scalar")(
+            context_, Span<EValue*>(stack)));
+    EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
+
+    context_ = KernelRuntimeContext();
+    ET_EXPECT_KERNEL_FAILURE(
+        context_,
+        getOpsFn("executorch_prim::floor.Scalar")(
             context_, Span<EValue*>(stack)));
     EXPECT_EQ(context_.failure_state(), Error::InvalidProgram);
 
