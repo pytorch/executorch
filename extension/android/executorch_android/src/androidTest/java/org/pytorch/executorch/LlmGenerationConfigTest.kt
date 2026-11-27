@@ -7,8 +7,11 @@
  */
 package org.pytorch.executorch
 
+import android.os.Process
+import android.util.Log
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import java.io.File
+import kotlin.system.exitProcess
 import org.apache.commons.io.FileUtils
 import org.json.JSONObject
 import org.junit.After
@@ -50,7 +53,17 @@ class LlmGenerationConfigTest {
   @After
   fun tearDown() {
     if (::llmModule.isInitialized) {
-      llmModule.close()
+      NativeTestResourceCleanup.closeOrAbort(
+          { llmModule.close() },
+          {
+            Log.e(
+                "ExecuTorchTests",
+                "Native test teardown refused while a method is executing; aborting test process",
+            )
+            Process.killProcess(Process.myPid())
+            exitProcess(1)
+          },
+      )
     }
   }
 
@@ -65,9 +78,18 @@ class LlmGenerationConfigTest {
   @Test(timeout = MAX_TEST_TIMEOUT_MS)
   fun testDefaultConfigWorks() {
     val config = LlmGenerationConfig.create().build()
-    val callback = CollectingCallback()
+    val callback = CollectingCallback(stopAfterCallbacks = 8)
     llmModule.generate(TEST_PROMPT, config, callback)
-    assertTrue("Default config should produce output", callback.results.isNotEmpty())
+    assertEquals("Default config should echo the prompt", TEST_PROMPT, callback.results.first())
+    assertTrue(
+        "Default config should generate output after the echoed prompt",
+        callback.results.drop(1).joinToString("").isNotEmpty(),
+    )
+    assertEquals("Default config should report stats once", 1, callback.stats.size)
+    assertTrue(
+        "Default config should execute the decode loop",
+        JSONObject(callback.stats.single()).getInt("generated_tokens") > 0,
+    )
   }
 
   @Test(timeout = MAX_TEST_TIMEOUT_MS)
@@ -258,12 +280,21 @@ class LlmGenerationConfigTest {
     }
   }
 
-  /** Simple callback that collects onResult tokens. */
-  private class CollectingCallback : LlmCallback {
+  /** Collects callback chunks, which may contain multiple tokens buffered by JNI. */
+  private inner class CollectingCallback(private val stopAfterCallbacks: Int = Int.MAX_VALUE) :
+      LlmCallback {
     val results = mutableListOf<String>()
+    val stats = mutableListOf<String>()
 
     override fun onResult(result: String) {
       results.add(result)
+      if (results.size >= stopAfterCallbacks) {
+        llmModule.stop()
+      }
+    }
+
+    override fun onStats(stats: String) {
+      this.stats.add(stats)
     }
   }
 
