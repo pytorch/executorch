@@ -108,6 +108,12 @@ class VulkanSupportedOperators(OperatorSupportBase):
         self.fusable_nodes: Set[torch.fx.Node] = set()
         self.unsupported_fusable_nodes: Set[torch.fx.Node] = set()
         for match in self.fusable_subgraphs:
+            # Fused ops that prepack an input only fuse when it is a constant.
+            if any(
+                node not in self.constant_nodes
+                for node in getattr(match, "required_constant_nodes", ())
+            ):
+                continue
             nodes = {
                 node for node in match.all_nodes if isinstance(node, torch.fx.Node)
             }
