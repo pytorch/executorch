@@ -1808,6 +1808,118 @@ class TestCoreMLPartitioner(unittest.TestCase):
                         torch.allclose(out.float(), model(x).float(), atol=1e-2)
                     )
 
+    def test_instance_norm_3d_is_decomposed(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11702.
+
+        Core ML's instance_norm only accepts rank 3 and 4 inputs, so
+        InstanceNorm3d lowered fine but failed to load ("parameter x[0] has
+        invalid rank 5").  The partitioner must not keep it whole, so it
+        decomposes into ops Core ML can run and the model stays delegated;
+        rank 3 and 4 instance_norm is delegated intact.
+        """
+
+        def lower(model, x):
+            ep = torch.export.export(model, (x,), strict=True)
+            edge = executorch.exir.to_edge_transform_and_lower(
+                ep, partitioner=[CoreMLPartitioner()]
+            )
+            op_names = [
+                n.target.__name__
+                for n in edge.exported_program().graph.nodes
+                if n.op == "call_function"
+            ]
+            delegated = format_delegated_graph(edge.exported_program().graph_module)
+            if _TEST_RUNTIME:
+                et_prog = edge.to_executorch()
+                program = Runtime.get().load_program(et_prog.buffer)
+                et_outputs = program.load_method("forward").execute((x,))[0]
+                self.assertTrue(
+                    torch.allclose(et_outputs, model(x), atol=1e-02, rtol=1e-02),
+                    model,
+                )
+            return ep, op_names, delegated
+
+        supported = [
+            (torch.nn.InstanceNorm1d(3), torch.randn(1, 3, 8)),
+            (torch.nn.InstanceNorm1d(3, affine=True), torch.randn(2, 3, 8)),
+            (torch.nn.InstanceNorm2d(3), torch.randn(1, 3, 6, 6)),
+            (torch.nn.InstanceNorm2d(3, affine=True), torch.randn(2, 3, 5, 6)),
+        ]
+        for model, x in supported:
+            model = model.eval()
+            ep, op_names, delegated = lower(model, x)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertIn(torch.ops.aten.instance_norm.default, not_decomposed)
+            # Rank 3 / 4 instance_norm is handed to Core ML whole.
+            self.assertIn("executorch_call_delegate", op_names, model)
+            self.assertNotIn("aten.instance_norm.default", op_names, model)
+            self.assertIn("aten.instance_norm.default", delegated, model)
+
+        unsupported = [
+            (torch.nn.InstanceNorm3d(3), torch.randn(1, 3, 4, 4, 4)),
+            (torch.nn.InstanceNorm3d(3, affine=True), torch.randn(2, 3, 4, 5, 6)),
+        ]
+        for model, x in unsupported:
+            model = model.eval()
+            ep, op_names, delegated = lower(model, x)
+            not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+            self.assertNotIn(torch.ops.aten.instance_norm.default, not_decomposed)
+            # Rank 5 instance_norm is decomposed instead: it is neither left
+            # in the graph nor handed to Core ML, and its decomposition is
+            # delegated.
+            self.assertIn("executorch_call_delegate", op_names, model)
+            self.assertNotIn("aten.instance_norm.default", op_names, model)
+            self.assertNotIn("aten.instance_norm.default", delegated, model)
+            self.assertIn("aten._native_batch_norm_legit", delegated, model)
+
+    def test_instance_norm_2d_and_3d_in_one_program(self):
+        """
+        A program with both an InstanceNorm2d and an InstanceNorm3d call.
+
+        The partitioner returns no per-node filter from ops_to_not_decompose,
+        so an op is either kept whole at every call or decomposed at every
+        call.  Since Core ML refuses the rank 5 call, instance_norm is not
+        kept, both calls decompose, and both decompositions are delegated.
+        Nothing is left in the program without a kernel.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.norm2d = torch.nn.InstanceNorm2d(3, affine=True)
+                self.norm3d = torch.nn.InstanceNorm3d(3, affine=True)
+
+            def forward(self, x, y):
+                return self.norm2d(x), self.norm3d(y)
+
+        model = Model().eval()
+        inputs = (torch.randn(2, 3, 5, 6), torch.randn(2, 3, 4, 5, 6))
+        ep = torch.export.export(model, inputs, strict=True)
+        not_decomposed, _ = CoreMLPartitioner().ops_to_not_decompose(ep)
+        self.assertNotIn(torch.ops.aten.instance_norm.default, not_decomposed)
+        edge = executorch.exir.to_edge_transform_and_lower(
+            ep, partitioner=[CoreMLPartitioner()]
+        )
+        op_names = [
+            n.target.__name__
+            for n in edge.exported_program().graph.nodes
+            if n.op == "call_function"
+        ]
+        delegated = format_delegated_graph(edge.exported_program().graph_module)
+        self.assertIn("executorch_call_delegate", op_names)
+        self.assertNotIn("aten.instance_norm.default", op_names)
+        self.assertNotIn("aten.instance_norm.default", delegated)
+        self.assertIn("aten._native_batch_norm_legit", delegated)
+        # Every op runs inside Core ML; only the delegate call and the getitems
+        # that unpack its outputs are left.
+        self.assertEqual([n for n in op_names if n.startswith("aten.")], [])
+        if _TEST_RUNTIME:
+            program = Runtime.get().load_program(edge.to_executorch().buffer)
+            outputs = program.load_method("forward").execute(inputs)
+            for out, ref in zip(outputs, model(*inputs)):
+                self.assertTrue(torch.allclose(out, ref, atol=1e-02, rtol=1e-02))
+
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
 
@@ -1947,6 +2059,8 @@ if __name__ == "__main__":
     test_runner.test_take_over_constant_data_false()
     test_runner.test_aten_rand_default_falls_back_to_portable()
     test_runner.test_aten_randn_is_still_delegated()
+    test_runner.test_instance_norm_3d_is_decomposed()
+    test_runner.test_instance_norm_2d_and_3d_in_one_program()
     test_runner.test_tied_embedding_is_quantized_with_its_linear()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()
