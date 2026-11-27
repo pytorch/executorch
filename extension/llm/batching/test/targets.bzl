@@ -5,6 +5,7 @@ def define_common_targets():
     runtime.cxx_test(
         name = "test",
         srcs = [
+            "checkpoint_test.cpp",
             "opaque_input_test.cpp",
             "prefix_cache_test.cpp",
             "runner_test.cpp",

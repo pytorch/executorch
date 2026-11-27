@@ -179,6 +179,17 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::optional<llm_batching::SessionId> clone(
       llm_batching::SessionId source,
       llm_batching::Position upto) override;
+  llm_batching::CheckpointResult<llm_batching::Checkpoint>
+  export_checkpoint_to_cpu(
+      llm_batching::SessionId source,
+      llm_batching::Position upto) override;
+  llm_batching::CheckpointResult<llm_batching::SessionId>
+  restore_checkpoint_from_cpu(
+      const llm_batching::Checkpoint& checkpoint,
+      llm_batching::Position upto) override;
+  llm_cache::CheckpointControl* checkpoint_control() {
+    return checkpoint_ctl_;
+  }
   void set_sampling(
       llm_batching::SessionId session,
       const llm_batching::SamplingParams& params,
@@ -274,6 +285,7 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
   std::unique_ptr<::executorch::extension::Module> module_;
   llm_cache::BatchControl* const ctl_;
   const CudaKVCache* const kv_;
+  llm_cache::CheckpointControl* const checkpoint_ctl_;
   std::string backend_id_;
   std::int32_t vocab_size_;
   int max_session_tokens_;

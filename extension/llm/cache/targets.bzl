@@ -15,6 +15,7 @@ def define_common_targets():
             "cache.h",
             "cache_registry.h",
             "cell_cache.h",
+            "checkpoint.h",
             "sequence_cache.h",
         ],
         visibility = ["PUBLIC"],

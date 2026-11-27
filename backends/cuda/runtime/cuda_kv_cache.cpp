@@ -18,6 +18,7 @@
 #include <set>
 #include <string>
 #include <tuple>
+#include <type_traits>
 #include <vector>
 
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
@@ -28,6 +29,7 @@
 #include <executorch/extension/cuda/device_guard.h>
 #include <executorch/extension/llm/cache/cache_registry.h>
 #include <executorch/extension/llm/cache/cell_cache.h>
+#include <executorch/extension/llm/cache/checkpoint.h>
 #include <executorch/extension/llm/cache/sequence_cache.h>
 #include <executorch/runtime/platform/log.h>
 
@@ -37,6 +39,55 @@ namespace {
 namespace slimc10 = ::executorch::backends::aoti::slim::c10;
 using ::executorch::extension::cuda::CUDAGuard;
 using ::executorch::runtime::Error;
+
+// Copies contiguous runs, preserving logical order independently of the
+// cache's cell/column layout. The host buffer is safe to release on return.
+template <bool Upload, typename Index>
+bool checkpoint_rows(
+    CudaKVPool& pool,
+    size_t layer,
+    bool value,
+    std::conditional_t<Upload, const uint8_t, uint8_t>* host,
+    const std::vector<Index>& rows,
+    size_t row_bytes,
+    int stride) {
+  auto* device = static_cast<uint8_t*>(pool.layer_data(layer, value));
+  for (size_t at = 0; at < rows.size();) {
+    size_t end = at + 1;
+    while (end < rows.size() && rows[end] == rows[end - 1] + stride)
+      ++end;
+    auto* cpu = host + at * row_bytes;
+    auto* gpu = device + static_cast<size_t>(rows[at]) * row_bytes;
+    cudaError_t status;
+    if constexpr (Upload) {
+      status = cudaMemcpy2DAsync(
+          gpu,
+          row_bytes * stride,
+          cpu,
+          row_bytes,
+          row_bytes,
+          end - at,
+          cudaMemcpyHostToDevice,
+          pool.stream());
+    } else {
+      status = cudaMemcpy2DAsync(
+          cpu,
+          row_bytes,
+          gpu,
+          row_bytes * stride,
+          row_bytes,
+          end - at,
+          cudaMemcpyDeviceToHost,
+          pool.stream());
+    }
+    if (status != cudaSuccess) {
+      (void)pool.synchronize();
+      return false;
+    }
+    at = end;
+  }
+  return pool.synchronize() == Error::Ok;
+}
 
 bool is_ring(const cache::LayerGeometry& layer) {
   return layer.policy.kind == cache::LayerPolicy::Kind::Ring;
@@ -285,7 +336,9 @@ constexpr size_t kFirstMaskBuffer = 2;
 // stops short of, so no real row ever reads it. Each step rewrites all W rows:
 // a padding row left from a wider step would otherwise still name a live cell
 // and overwrite another sequence's history.
-class CudaCellCache final : public cache::CellCache, public CudaKVCache {
+class CudaCellCache final : public cache::CellCache,
+                            public CudaKVCache,
+                            public cache::CheckpointControl {
  public:
   CudaCellCache(
       const cache::CacheGeometry& geometry,
@@ -293,6 +346,8 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
       slimc10::ScalarType storage_dtype,
       std::vector<int> windows)
       : cache::CellCache(geometry, table_config(cfg)),
+        geometry_(geometry),
+        cfg_(cfg),
         pool_cells_(cfg.capacity),
         max_write_(*cfg.max_write),
         dflash_block_size_(geometry.dflash_block_size),
@@ -395,6 +450,96 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
       return false;
     }
     return cache::CellCache::rewind(seq_id, position);
+  }
+
+  cache::CheckpointResult<cache::SequenceCheckpoint> export_to_cpu(
+      int32_t id,
+      int upto) override {
+    std::lock_guard<std::recursive_mutex> guard(mutex_);
+    const auto cells = sequence_cells(id, upto);
+    if (!cells || poisoned_ || pending_width_ || (upto && !pool_.allocated())) {
+      return cache::CheckpointError{"checkpoint cache state is unavailable"};
+    }
+    if (pool_.synchronize(true) != Error::Ok)
+      return cache::CheckpointError{"checkpoint device synchronization failed"};
+    int device_id = 0;
+    if (cudaGetDevice(&device_id) != cudaSuccess)
+      return cache::CheckpointError{"checkpoint device unavailable"};
+    const auto device =
+        CUDAGuard::create(pool_.allocated() ? pool_.device() : device_id);
+    if (!device.ok())
+      return cache::CheckpointError{"checkpoint device unavailable"};
+    cache::SequenceCheckpoint result{
+        upto, cfg_.kv_dtype, geometry_.dflash_block_size, {}};
+    for (size_t i = 0; i < geometry_.layers.size(); ++i) {
+      const auto& g = geometry_.layers[i];
+      cache::LayerCheckpoint layer{
+          0, g.n_kv_heads, g.head_dim, g.policy.window, {}, {}};
+      const size_t row = static_cast<size_t>(g.n_kv_heads) * g.head_dim *
+          cache::checkpoint_itemsize(cfg_.kv_dtype);
+      layer.key.resize(static_cast<size_t>(upto) * row);
+      layer.value.resize(layer.key.size());
+      if (upto &&
+          (!checkpoint_rows<false>(
+               pool_, i, false, layer.key.data(), *cells, row, 1) ||
+           !checkpoint_rows<false>(
+               pool_, i, true, layer.value.data(), *cells, row, 1))) {
+        return cache::CheckpointError{"checkpoint device read failed"};
+      }
+      result.layers.push_back(std::move(layer));
+    }
+    return result;
+  }
+
+  cache::CheckpointResult<int32_t> import_from_cpu(
+      const cache::SequenceCheckpoint& state,
+      int upto) override {
+    std::lock_guard<std::recursive_mutex> guard(mutex_);
+    if (poisoned_ || pending_width_ ||
+        !cache::valid_checkpoint(state, geometry_, cfg_, upto) ||
+        std::any_of(
+            state.layers.begin(), state.layers.end(), [](const auto& layer) {
+              return layer.begin != 0;
+            })) {
+      return cache::CheckpointError{"incompatible cell checkpoint"};
+    }
+    const auto id = reserve_sequence(upto);
+    if (!id)
+      return cache::CheckpointError{"checkpoint exceeds cache capacity"};
+    struct Reservation {
+      CudaCellCache& cache;
+      int32_t id;
+      bool published = false;
+      ~Reservation() {
+        if (!published)
+          cache.seq_rm(id);
+      }
+    } reservation{*this, *id};
+    const auto cells = sequence_cells(*id, upto);
+    if (pool_.prepare(
+            std::max<int64_t>(used_end(), 1),
+            pool_.rows(),
+            cudaStreamPerThread) != Error::Ok ||
+        pool_.synchronize() != Error::Ok)
+      return cache::CheckpointError{"checkpoint allocation failed"};
+    const auto device = CUDAGuard::create(pool_.device());
+    if (!device.ok())
+      return cache::CheckpointError{"checkpoint device unavailable"};
+    for (size_t i = 0; i < state.layers.size(); ++i) {
+      const auto& layer = state.layers[i];
+      const size_t row = static_cast<size_t>(layer.heads) * layer.head_dim *
+          cache::checkpoint_itemsize(state.dtype);
+      for (bool value : {false, true}) {
+        const auto& bytes = value ? layer.value : layer.key;
+        if (!checkpoint_rows<true>(
+                pool_, i, value, bytes.data(), *cells, row, 1))
+          return cache::CheckpointError{"checkpoint device write failed"};
+      }
+    }
+    if (pool_.mark_step_done() != Error::Ok)
+      return cache::CheckpointError{"checkpoint synchronization failed"};
+    reservation.published = true;
+    return *id;
   }
 
   // -- CudaKVCache.
@@ -572,10 +717,12 @@ class CudaCellCache final : public cache::CellCache, public CudaKVCache {
     if (void* p = cache::CellCache::face(id)) {
       return p;
     }
-    return cache::expose<CudaKVCache>(this, id);
+    return cache::expose<CudaKVCache, cache::CheckpointControl>(this, id);
   }
 
  private:
+  cache::CacheGeometry geometry_;
+  cache::CacheConfig cfg_;
   // The table's cells are the pool's rows but one: the last is scratch.
   static cache::CacheConfig table_config(const cache::CacheConfig& cfg) {
     cache::CacheConfig table = cfg;
@@ -824,7 +971,8 @@ constexpr size_t kSeqInfoBuffer = 1;
 
 class CudaBatchedSequenceCache final : public cache::Cache,
                                        public cache::BatchControl,
-                                       public CudaKVCache {
+                                       public CudaKVCache,
+                                       public cache::CheckpointControl {
  public:
   CudaBatchedSequenceCache(
       const cache::CacheGeometry& geometry,
@@ -963,7 +1111,9 @@ class CudaBatchedSequenceCache final : public cache::Cache,
         pool_.mark_step_done() != Error::Ok) {
       return std::nullopt;
     }
-    seqs_.emplace(*column, Sequence{*column, std::move(plan)});
+    seqs_.emplace(
+        *column,
+        Sequence{*column, std::move(plan), source->second.checkpoint_begins});
     return *column;
   }
 
@@ -982,6 +1132,134 @@ class CudaBatchedSequenceCache final : public cache::Cache,
     std::lock_guard<std::mutex> guard(mutex_);
     const auto it = seqs_.find(seq_id);
     return it == seqs_.end() ? 0 : it->second.plan.length();
+  }
+
+  cache::CheckpointResult<cache::SequenceCheckpoint> export_to_cpu(
+      int32_t id,
+      int upto) override {
+    std::lock_guard<std::mutex> guard(mutex_);
+    const auto it = seqs_.find(id);
+    if (it == seqs_.end() || upto < 0 || !it->second.plan.can_rewind(upto) ||
+        poisoned_ || !pending_owners_.empty() || (upto && !pool_.allocated()))
+      return cache::CheckpointError{
+          "checkpoint position is outside retained history"};
+    if (pool_.synchronize(true) != Error::Ok)
+      return cache::CheckpointError{"checkpoint synchronization failed"};
+    int device_id = 0;
+    if (cudaGetDevice(&device_id) != cudaSuccess)
+      return cache::CheckpointError{"checkpoint device unavailable"};
+    const auto device =
+        CUDAGuard::create(pool_.allocated() ? pool_.device() : device_id);
+    if (!device.ok())
+      return cache::CheckpointError{"checkpoint device unavailable"};
+    cache::SequenceCheckpoint result{
+        upto, cfg_.kv_dtype, geometry_.dflash_block_size, {}};
+    for (size_t i = 0; i < geometry_.layers.size(); ++i) {
+      const auto& g = geometry_.layers[i];
+      const int retained = it->second.checkpoint_begins.empty()
+          ? 0
+          : it->second.checkpoint_begins[i];
+      const int begin = upto
+          ? std::max<int64_t>(
+                retained,
+                is_ring(g) ? it->second.plan.written_length() - layer_rows_[i]
+                           : 0)
+          : 0;
+      cache::LayerCheckpoint layer{
+          begin, g.n_kv_heads, g.head_dim, g.policy.window, {}, {}};
+      const size_t row = static_cast<size_t>(g.n_kv_heads) * g.head_dim *
+          cache::checkpoint_itemsize(cfg_.kv_dtype);
+      std::vector<int64_t> rows;
+      for (int p = begin; p < upto; ++p)
+        rows.push_back((p % layer_rows_[i]) * columns_ + it->second.column);
+      layer.key.resize(rows.size() * row);
+      layer.value.resize(layer.key.size());
+      if (upto &&
+          (!checkpoint_rows<false>(
+               pool_, i, false, layer.key.data(), rows, row, columns_) ||
+           !checkpoint_rows<false>(
+               pool_, i, true, layer.value.data(), rows, row, columns_))) {
+        return cache::CheckpointError{"checkpoint device read failed"};
+      }
+      result.layers.push_back(std::move(layer));
+    }
+    if (!cache::valid_checkpoint(result, geometry_, cfg_, upto)) {
+      return cache::CheckpointError{
+          "checkpoint position is outside retained history"};
+    }
+    return result;
+  }
+
+  cache::CheckpointResult<int32_t> import_from_cpu(
+      const cache::SequenceCheckpoint& state,
+      int upto) override {
+    std::lock_guard<std::mutex> guard(mutex_);
+    if (poisoned_ || !pending_owners_.empty() ||
+        !cache::valid_checkpoint(state, geometry_, cfg_, upto)) {
+      return cache::CheckpointError{
+          "incompatible sequence checkpoint or unavailable position"};
+    }
+    const auto column = free_column();
+    if (!column)
+      return cache::CheckpointError{"checkpoint exceeds cache capacity"};
+    if (pool_.prepare(
+            std::max<int64_t>(upto, 1) * columns_,
+            pool_.rows(),
+            cudaStreamPerThread) != Error::Ok ||
+        pool_.synchronize() != Error::Ok)
+      return cache::CheckpointError{"checkpoint allocation failed"};
+    const auto device = CUDAGuard::create(pool_.device());
+    if (!device.ok())
+      return cache::CheckpointError{"checkpoint device unavailable"};
+    int floor = 0;
+    std::vector<int> retained_begins;
+    for (size_t i = 0; i < state.layers.size(); ++i) {
+      const auto& layer = state.layers[i];
+      const int begin =
+          upto ? std::max<int64_t>(layer.begin, upto - layer_rows_[i]) : 0;
+      retained_begins.push_back(begin);
+      if (begin)
+        floor = std::max(
+            floor, begin + layer.window - (state.dflash_block_size ? 0 : 1));
+      const size_t row = static_cast<size_t>(layer.heads) * layer.head_dim *
+          cache::checkpoint_itemsize(state.dtype);
+      std::vector<int64_t> rows;
+      for (int p = begin; p < upto; ++p)
+        rows.push_back((p % layer_rows_[i]) * columns_ + *column);
+      for (bool value : {false, true}) {
+        if (is_ring(geometry_.layers[i])) {
+          // Attention also loads masked ring rows: 0 * stale NaN is NaN.
+          auto* base = static_cast<uint8_t*>(pool_.layer_data(i, value));
+          const auto held = std::min(layer_rows_[i], pool_.rows() / columns_);
+          if (cudaMemset2DAsync(
+                  base + row * *column,
+                  row * columns_,
+                  0,
+                  row,
+                  static_cast<size_t>(held),
+                  pool_.stream()) != cudaSuccess) {
+            (void)pool_.synchronize();
+            return cache::CheckpointError{
+                "checkpoint ring initialization failed"};
+          }
+        }
+        const auto& bytes = value ? layer.value : layer.key;
+        const auto* data = bytes.data();
+        if (upto)
+          data += static_cast<size_t>(begin - layer.begin) * row;
+        if (!checkpoint_rows<true>(pool_, i, value, data, rows, row, columns_))
+          return cache::CheckpointError{"checkpoint device write failed"};
+      }
+    }
+    cache::SequenceCache plan(geometry_, cfg_);
+    if (!plan.restore_checkpoint_position(upto, floor) ||
+        pool_.mark_step_done() != Error::Ok) {
+      return cache::CheckpointError{"checkpoint position restore failed"};
+    }
+    seqs_.emplace(
+        *column,
+        Sequence{*column, std::move(plan), std::move(retained_begins)});
+    return *column;
   }
 
   // -- CudaKVCache.
@@ -1156,13 +1434,16 @@ class CudaBatchedSequenceCache final : public cache::Cache,
 
  protected:
   void* face(cache::FaceId id) override {
-    return cache::expose<cache::BatchControl, CudaKVCache>(this, id);
+    return cache::
+        expose<cache::BatchControl, CudaKVCache, cache::CheckpointControl>(
+            this, id);
   }
 
  private:
   struct Sequence {
     int column;
     cache::SequenceCache plan;
+    std::vector<int> checkpoint_begins;
   };
 
   // A ring never needs more rows than a sequence can hold; it then never wraps.
