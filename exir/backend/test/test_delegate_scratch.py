@@ -1134,6 +1134,41 @@ class TestDelegateScratch(unittest.TestCase):
             (spec.mem_id, spec.mem_offset),
         )
 
+    def test_scratch_over_shared_state_needs_a_newer_runtime(self):
+        class Stateful(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("state", torch.zeros(4))
+
+            def forward(self, x):
+                self.state.add_(1)
+                return x * 2
+
+        def version(scratch_pool):
+            x = torch.ones(2)
+            edge = exir.to_edge(
+                {
+                    "forward": torch.export.export(Stateful(), (x,)),
+                    "helper": torch.export.export(SingleDelegateModule(), (x, x)),
+                },
+                compile_config=EdgeCompileConfig(_check_ir_validity=False),
+            ).to_backend(
+                {"helper": OneDelegatePerAddPartitioner("DelegateScratchTestBackend")}
+            )
+            return edge.to_executorch(
+                ExecutorchBackendConfig(
+                    memory_planning_pass={
+                        "forward": MemoryPlanningPass(share_mutable_buffers=True),
+                        "helper": LabelledPoolPlanner({"": scratch_pool}),
+                    }
+                )
+            ).executorch_program.version
+
+        # Runtimes that ignore the sharing marker give the helper the arena 2 of
+        # the state, so its scratch there would overwrite the state.
+        self.assertEqual(version(2), 1)
+        self.assertEqual(version(1), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

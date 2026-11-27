@@ -20,9 +20,20 @@ from executorch.exir.emit._emitter import (
 )
 from executorch.exir.error import ExportError, ExportErrorType
 
-from executorch.exir.schema import Buffer, Program, SubsegmentOffsets
+from executorch.exir.schema import (
+    Buffer,
+    DelegateCall,
+    DeviceType,
+    ExecutionPlan,
+    Program,
+    SubsegmentOffsets,
+    Tensor,
+)
 from executorch.exir.tensor import dim_order_from_stride, placeholder_constant
-from executorch.exir.version import EXECUTORCH_SCHEMA_VERSION
+from executorch.exir.version import (
+    EXECUTORCH_SCHEMA_VERSION,
+    SHARED_NON_CONST_BUFFERS_VERSION,
+)
 from torch.export.exported_program import ExportedProgram, OutputKind
 from torch.utils import _pytree as pytree
 
@@ -61,6 +72,49 @@ class EmitterOutput:
     # Each constant_tag groups a set of constants together.
     # {constant_tag: {fqn: index into external_constant_buffer}}
     external_constant_map: Optional[Dict[str, Dict[str, int]]]
+
+
+def _program_version(plans: List[ExecutionPlan]) -> int:
+    """The lowest program version whose runtimes keep the shared buffers of
+    these plans shared. Shared host state that older runtimes already share,
+    with share_memory_arenas, stays at version 0."""
+    shared: Dict[int, int] = {}
+    for plan in plans:
+        for index in plan.shared_non_const_buffers or []:
+            shared[index] = max(
+                shared.get(index, 0), plan.non_const_buffer_sizes[index]
+            )
+    for plan in plans:
+        marked = plan.shared_non_const_buffers or []
+        # Runtimes that ignore the marker give a method with device memory
+        # buffers of its own, and every other method one buffer per index.
+        if any(
+            entry.device_type != DeviceType.CPU
+            for entry in plan.non_const_buffer_device or []
+        ):
+            if marked:
+                return SHARED_NON_CONST_BUFFERS_VERSION
+            continue
+        allocations = [
+            value.val.allocation_info
+            for value in plan.values
+            if isinstance(value.val, Tensor) and 0 not in value.val.sizes
+        ] + [
+            scratch.allocation
+            for chain in plan.chains
+            for instruction in chain.instructions
+            if isinstance(instruction.instr_args, DelegateCall)
+            for scratch in instruction.instr_args.scratch or []
+        ]
+        if any(
+            info is not None
+            and info.memory_id not in marked
+            and (info.memory_offset_high << 32) + info.memory_offset_low
+            < shared.get(info.memory_id, 0)
+            for info in allocations
+        ):
+            return SHARED_NON_CONST_BUFFERS_VERSION
+    return EXECUTORCH_SCHEMA_VERSION
 
 
 def _remove_non_user_outputs(exported_program: ExportedProgram) -> torch.fx.GraphModule:
@@ -282,7 +336,7 @@ def emit_program(
         method_to_delegate_debug_id_map=method_to_delegate_debug_id_map,
         instruction_id_to_num_outs_map=instruction_id_to_num_outs_map,
         program=Program(
-            version=EXECUTORCH_SCHEMA_VERSION,
+            version=_program_version(plans),
             execution_plan=plans,
             constant_buffer=program_state.constant_buffer,
             backend_delegate_data=program_state.backend_delegate_data,

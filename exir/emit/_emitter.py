@@ -2259,4 +2259,7 @@ class _TopLevelEmitter(_Emitter):
             non_const_buffer_device=self.module.meta.get(
                 "non_const_buffer_device", None
             ),
+            shared_non_const_buffers=self.module.meta.get(
+                "shared_non_const_buffers", None
+            ),
         )

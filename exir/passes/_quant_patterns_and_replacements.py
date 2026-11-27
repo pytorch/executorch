@@ -1005,6 +1005,10 @@ def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
                 return val
 
             zero_point = get_val("zero_point")
+            # A zero point with no constant value, such as a buffer that another
+            # method changes, has to stay an input.
+            if not isinstance(zero_point, torch.Tensor):
+                return has_nonzero_zero_point
             all_zero = (zero_point == 0).all().item()
             if has_nonzero_zero_point:
                 return not all_zero
@@ -1023,7 +1027,9 @@ def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
         def embedding_byte_replacement(
             indices, int_data, group_size, scale, zero_point
         ):
-            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = torch.ops.aten._to_copy.default(
+                zero_point, dtype=scale.dtype
+            )
             zero_point_dtype_cast = (
                 zero_point_dtype_cast if has_nonzero_zero_point else None
             )
@@ -1057,7 +1063,9 @@ def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
         def embedding_byte_dtype_replacement(
             indices, int_data, group_size, scale, zero_point, output_dtype
         ):
-            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = torch.ops.aten._to_copy.default(
+                zero_point, dtype=scale.dtype
+            )
             zero_point_dtype_cast = (
                 zero_point_dtype_cast if has_nonzero_zero_point else None
             )
@@ -1086,7 +1094,9 @@ def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
             packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
                 int_data, 2
             )
-            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = torch.ops.aten._to_copy.default(
+                zero_point, dtype=scale.dtype
+            )
             zero_point_dtype_cast = (
                 zero_point_dtype_cast if has_nonzero_zero_point else None
             )
@@ -1118,7 +1128,9 @@ def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
             packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
                 int_data, 2
             )
-            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = torch.ops.aten._to_copy.default(
+                zero_point, dtype=scale.dtype
+            )
             zero_point_dtype_cast = (
                 zero_point_dtype_cast if has_nonzero_zero_point else None
             )
@@ -1147,7 +1159,9 @@ def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
             packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
                 int_data, 4
             )
-            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = torch.ops.aten._to_copy.default(
+                zero_point, dtype=scale.dtype
+            )
             zero_point_dtype_cast = (
                 zero_point_dtype_cast if has_nonzero_zero_point else None
             )
@@ -1179,7 +1193,9 @@ def _get_embedding_ops_patterns_and_replacements_torchao(  # noqa C901
             packed_int_data = torch.ops.quant_fusion._pack_embedding_weight.default(
                 int_data, 4
             )
-            zero_point_dtype_cast = torch.ops.aten.to.dtype(zero_point, scale.dtype)
+            zero_point_dtype_cast = torch.ops.aten._to_copy.default(
+                zero_point, dtype=scale.dtype
+            )
             zero_point_dtype_cast = (
                 zero_point_dtype_cast if has_nonzero_zero_point else None
             )

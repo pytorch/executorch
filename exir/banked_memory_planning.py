@@ -422,10 +422,10 @@ def banked_memory_planning_pass(
     """
     if kwargs.get("share_mutable_buffers"):
         # run_multimethod hardcodes shared state to arena 2 and
-        # _check_default_mem_ids requires every other buffer on arena 1, neither of
-        # which a multi-bank plan can satisfy. Supporting it means placing shared
-        # state one arena past the last planned one, which is a change to core
-        # memory planning and belongs in its own review.
+        # _check_default_mem_ids requires every other host buffer on arena 1,
+        # neither of which a multi-bank plan can satisfy. Supporting it means
+        # placing shared state one arena past the last planned one, which is a
+        # change to core memory planning and belongs in its own review.
         raise ValueError(
             "share_mutable_buffers is not yet supported with banked memory "
             "planning: it reserves arena 2 for shared state and requires every "

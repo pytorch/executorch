@@ -425,6 +425,12 @@ table ExecutionPlan {
   // default to CPU, ensuring zero regression.
   non_const_buffer_device: [NonConstBufferDevice];
 
+  // [Optional] Indices into non_const_buffer_sizes of the buffers that every
+  // execution plan listing the same index shares, such as mutable state that
+  // several methods read and write. They must all be given one allocation,
+  // on the device that non_const_buffer_device records for it.
+  shared_non_const_buffers: [int];
+
 }
 
 // Maps a non-constant buffer to the device where it should be allocated.

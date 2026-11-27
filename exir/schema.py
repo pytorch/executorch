@@ -305,6 +305,9 @@ class ExecutionPlan:
     # Per-buffer device mapping. Each entry maps a non-constant buffer to the
     # device where it should be allocated. For CPU-only programs, this is empty.
     non_const_buffer_device: Optional[List[NonConstBufferDevice]] = None
+    # Indices into non_const_buffer_sizes of the buffers every execution plan
+    # that lists the same index shares.
+    shared_non_const_buffers: Optional[List[int]] = None
 
 
 @dataclass

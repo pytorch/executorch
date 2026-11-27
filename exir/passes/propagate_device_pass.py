@@ -26,56 +26,21 @@ from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     _schema_writes_input,
 )
 
-# Re-exported for backward compatibility; the dataclass lives in a lightweight
-# module so that ExecutorchBackendConfig can reference it without importing the
-# et_copy op registry above.
+# Re-exported for backward compatibility. These live in a lightweight module
+# that ExecutorchBackendConfig and MemoryPlanningPass can import: this one
+# imports the et_copy op registry above and, through LoweredBackendModule,
+# MemoryPlanningPass itself.
 from executorch.exir.passes.propagate_device_config import (  # noqa: F401
+    _get_target_device_from_compile_specs,
+    _METADATA_READERS,
+    _parse_device_spec_value,
     PropagateDeviceConfig,
+    TARGET_DEVICE_COMPILE_SPEC_KEY,
 )
 from executorch.exir.tensor import TensorSpec
 from torch.fx.passes.infra.pass_base import PassBase, PassResult
 
 logger: logging.Logger = logging.getLogger(__name__)
-
-# CompileSpec key convention for specifying the target device.
-# Partitioners that target a specific device should include a CompileSpec entry
-# with this key and a value encoding the device string (e.g., b"cuda:0").
-TARGET_DEVICE_COMPILE_SPEC_KEY = "target_device"
-
-# Ops that read only the sizes, strides or offset of a tensor. Those stay in
-# host memory when the data is on a device, so these ops need no copy of it.
-_METADATA_READERS = (
-    torch.ops.aten.sym_size.default,
-    torch.ops.aten.sym_size.int,
-    torch.ops.aten.sym_stride.int,
-    torch.ops.aten.sym_numel.default,
-    torch.ops.aten.sym_storage_offset.default,
-)
-
-
-def _parse_device_spec_value(value: bytes) -> tuple[schema.DeviceType, int]:
-    """
-    Parse a target_device CompileSpec value (e.g., b"cuda:0") into
-    (DeviceType, device_index).
-
-    The type portion is matched case-insensitively against schema.DeviceType
-    member names (e.g., "cpu", "cuda").  Raises ValueError for unknown types.
-    """
-    device_str = value.decode("utf-8").strip().lower()
-    if ":" in device_str:
-        type_str, index_str = device_str.split(":", 1)
-        device_index = int(index_str)
-    else:
-        type_str = device_str
-        device_index = 0
-    device_type = next(
-        (dt for dt in schema.DeviceType if dt.name.lower() == type_str),
-        None,
-    )
-    if device_type is None:
-        valid = ", ".join(dt.name for dt in schema.DeviceType)
-        raise ValueError(f"Unknown device type '{type_str}'. Valid types: {valid}")
-    return device_type, device_index
 
 
 def _get_lowered_module(
@@ -96,19 +61,6 @@ def _get_lowered_module(
     lowered_module = getattr(graph_module, lowered_node.target, None)
     if isinstance(lowered_module, LoweredBackendModule):
         return lowered_module
-    return None
-
-
-def _get_target_device_from_compile_specs(
-    lowered_module: LoweredBackendModule,
-) -> Optional[tuple[schema.DeviceType, int]]:
-    """
-    Look for a CompileSpec with key TARGET_DEVICE_COMPILE_SPEC_KEY and return
-    the corresponding (DeviceType, device_index), or None if not found.
-    """
-    for spec in lowered_module.compile_specs:
-        if spec.key == TARGET_DEVICE_COMPILE_SPEC_KEY:
-            return _parse_device_spec_value(spec.value)
     return None
 
 

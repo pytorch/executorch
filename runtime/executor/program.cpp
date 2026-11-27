@@ -16,6 +16,7 @@
 #include <executorch/runtime/executor/memory_manager.h>
 #include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/executor/program_validation.h>
+#include <executorch/runtime/executor/tensor_parser.h>
 #include <executorch/runtime/platform/profiler.h>
 #include <executorch/schema/extended_header.h>
 #include <executorch/schema/program_generated.h>
@@ -531,6 +532,95 @@ Result<const void*> Program::get_constant_buffer_data(
     return Error::InvalidProgram;
 #endif
   }
+}
+
+Error Program::initialize_planned_buffer(
+    const char* method_name,
+    size_t buffer_index,
+    HierarchicalAllocator* planned_memory,
+    const NamedDataMap* named_data_map) const {
+  auto plan = get_execution_plan(internal_program_, method_name);
+  if (!plan.ok()) {
+    return plan.error();
+  }
+  // Index zero of non_const_buffer_sizes is reserved.
+  const auto* sizes = plan.get()->non_const_buffer_sizes();
+  ET_CHECK_OR_RETURN_ERROR(
+      sizes != nullptr && buffer_index < sizes->size() &&
+          buffer_index + 1 < sizes->size(),
+      InvalidArgument,
+      "Method %s has no planned buffer %" ET_PRIsize_t,
+      method_name,
+      buffer_index);
+  ET_CHECK_OR_RETURN_ERROR(
+      planned_memory != nullptr, InvalidArgument, "Null planned_memory");
+  const auto initialized = planned_memory->initialized_buffers();
+  ET_CHECK_OR_RETURN_ERROR(
+      buffer_index >= initialized.size() || !initialized[buffer_index],
+      InvalidState,
+      "Planned buffer %" ET_PRIsize_t " is already initialized",
+      buffer_index);
+  const auto* values = plan.get()->values();
+  ET_CHECK_OR_RETURN_ERROR(
+      values != nullptr, InvalidProgram, "Missing values field");
+  for (size_t i = 0; i < values->size(); ++i) {
+    const auto* value = values->Get(i);
+    if (value == nullptr ||
+        value->val_type() != executorch_flatbuffer::KernelTypes::Tensor) {
+      continue;
+    }
+    const auto* s_tensor = value->val_as_Tensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor != nullptr,
+        InvalidProgram,
+        "Null value at index %" ET_PRIsize_t,
+        i);
+    const auto* allocation_info = s_tensor->allocation_info();
+    // Memory ids count from 1; planned buffer indexes count from 0.
+    if (allocation_info == nullptr ||
+        allocation_info->memory_id() != buffer_index + 1) {
+      continue;
+    }
+    const auto* extra_info = s_tensor->extra_tensor_info();
+    const bool external = extra_info != nullptr &&
+        extra_info->location() ==
+            executorch_flatbuffer::TensorDataLocation::EXTERNAL;
+    if (s_tensor->data_buffer_idx() == 0 && !external) {
+      continue;
+    }
+    ET_CHECK_OR_RETURN_ERROR(
+        s_tensor->sizes() != nullptr && s_tensor->dim_order() != nullptr,
+        InvalidProgram,
+        "Missing sizes or dim_order of tensor %" ET_PRIsize_t,
+        i);
+    const auto scalar_type =
+        static_cast<executorch::aten::ScalarType>(s_tensor->scalar_type());
+    ET_CHECK_OR_RETURN_ERROR(
+        isValid(scalar_type),
+        InvalidProgram,
+        "Invalid or unsupported ScalarType %" PRId8,
+        static_cast<int8_t>(scalar_type));
+    auto layout = TensorLayout::create(
+        Span<const int32_t>(
+            s_tensor->sizes()->data(), s_tensor->sizes()->size()),
+        Span<const uint8_t>(
+            s_tensor->dim_order()->data(), s_tensor->dim_order()->size()),
+        scalar_type);
+    if (!layout.ok()) {
+      return layout.error();
+    }
+    auto data = deserialization::getTensorDataPtr(
+        s_tensor,
+        this,
+        layout->nbytes(),
+        planned_memory,
+        named_data_map,
+        /*external_constants=*/{});
+    if (!data.ok()) {
+      return data.error();
+    }
+  }
+  return Error::Ok;
 }
 
 Result<const NamedDataMap*> Program::get_named_data_map() const {

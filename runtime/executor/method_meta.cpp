@@ -504,6 +504,29 @@ Result<etensor::Device> MethodMeta::memory_planned_buffer_device(
   return etensor::Device{etensor::DeviceType::CPU, 0};
 }
 
+Result<bool> MethodMeta::memory_planned_buffer_is_shared(size_t index) const {
+  auto num_buffers = this->num_memory_planned_buffers();
+  ET_CHECK_OR_RETURN_ERROR(
+      index < num_buffers,
+      InvalidArgument,
+      "index %zu out of range. num_buffers: %zu",
+      index,
+      num_buffers);
+  auto* shared_buffers = s_plan_->shared_non_const_buffers();
+  if (shared_buffers == nullptr) {
+    return false;
+  }
+  // Like non_const_buffer_device, the list indexes non_const_buffer_sizes,
+  // whose entry 0 is reserved.
+  const auto internal_idx = static_cast<int32_t>(index + 1);
+  for (size_t i = 0; i < shared_buffers->size(); ++i) {
+    if (shared_buffers->Get(i) == internal_idx) {
+      return true;
+    }
+  }
+  return false;
+}
+
 bool MethodMeta::uses_backend(const char* backend_name) const {
   ET_CHECK_MSG(backend_name, "backend name is null");
   const auto delegates = s_plan_->delegates();

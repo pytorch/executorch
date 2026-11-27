@@ -177,6 +177,8 @@ def pte_diff_within_tolerance(  # noqa: C901
             or plan_diff.delegates_only_in_a
             or plan_diff.delegates_only_in_b
             or plan_diff.non_const_buffer_sizes_a is not None
+            or plan_diff.shared_non_const_buffers_a
+            != plan_diff.shared_non_const_buffers_b
             or plan_diff.value_count_a is not None
             or plan_diff.instruction_count_a is not None
             or plan_diff.tensors_only_in_a

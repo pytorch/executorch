@@ -80,15 +80,18 @@ class Module {
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    * @param[in] share_memory_arenas When true, all methods loaded by this Module
-   * share the same memory-planned buffers for mem_id=1 (activation memory)
-   * and mem_id=2 (shared mutable buffer memory), sized to the max
-   * across all methods. mem_id>2 indicates a custom memory plan, and those
-   * receive fresh memory buffers. share_memory_arenas is required for models
-   * exported with share_mutable_buffers=true, where methods access shared
-   * mutable state (e.g., set/get state). When enabled, outputs from one method
-   * may be invalidated by executing another method, since their output tensors
-   * can alias the same underlying buffer. Consume or copy outputs before
-   * calling execute again. NOTE: This class is not thread-safe and performs
+   * share the same host memory-planned buffers for mem_id=1 (activation
+   * memory) and mem_id=2, sized to the max across all methods. Other buffers,
+   * including those in device memory, get memory of their own. Programs that
+   * do not mark their shared buffers need this flag for methods to access
+   * shared mutable state (e.g., set/get state), and their methods that plan
+   * device memory fail to load with it (NotSupported). When enabled, outputs
+   * from one method may be invalidated by executing another method, since their
+   * output tensors can alias the same underlying buffer. Consume or copy
+   * outputs before calling execute again. Buffers the program marks as shared
+   * are shared whatever this flag says; see load_method().
+   *
+   * NOTE: This class is not thread-safe and performs
    * no internal synchronization. Calling execute concurrently on the same
    * Module instance from multiple threads is unsafe, regardless of whether
    * share_memory_arenas is true or false. When share_memory_arenas is true,
@@ -112,7 +115,8 @@ class Module {
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    * @param[in] share_memory_arenas When true, all methods loaded by this Module
-   * share a single set of memory-planned buffers.
+   * share the host memory-planned buffers for mem_id=1 and mem_id=2. See the
+   * first constructor.
    */
   explicit Module(
       const std::string& file_path,
@@ -132,7 +136,8 @@ class Module {
    * @param[in] load_mode The loading mode to use.
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    * @param[in] share_memory_arenas When true, all methods loaded by this Module
-   * share a single set of memory-planned buffers.
+   * share the host memory-planned buffers for mem_id=1 and mem_id=2. See the
+   * first constructor.
    */
   explicit Module(
       const std::string& file_path,
@@ -153,7 +158,8 @@ class Module {
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    * @param[in] data_map_loader A DataLoader used for loading external weights.
    * @param[in] share_memory_arenas When true, all methods loaded by this Module
-   * share a single set of memory-planned buffers.
+   * share the host memory-planned buffers for mem_id=1 and mem_id=2. See the
+   * first constructor.
    */
   explicit Module(
       std::unique_ptr<runtime::DataLoader> data_loader,
@@ -174,7 +180,8 @@ class Module {
    * @param[in] event_tracer A EventTracer used for tracking and logging events.
    * @param[in] data_map_loader A DataLoader used for loading external weights.
    * @param[in] share_memory_arenas When true, all methods loaded by this Module
-   * share a single set of memory-planned buffers.
+   * share the host memory-planned buffers for mem_id=1 and mem_id=2. See the
+   * first constructor.
    */
   explicit Module(
       std::shared_ptr<Program> program,
@@ -285,9 +292,20 @@ class Module {
    * Load a specific method from the program and set up memory management if
    * needed. The loaded method is cached to reuse the next time it's executed.
    *
+   * A buffer the program marks as shared, such as the mutable state of a model
+   * exported with share_mutable_buffers=true, gets one allocation, in host or
+   * device memory, for every method that marks it, and an output that aliases
+   * it can change when another method runs. That allocation is made when the
+   * first such method is loaded, gets the initial data the program stores for
+   * it then, and lives as long as this Module, so loading, unloading or
+   * reloading a method never resets it.
+   *
    * @param[in] method_name The name of the method to load.
    * @param[in] planned_memory The memory-planned buffers to use for mutable
-   * tensor data when executing a method.
+   * tensor data when executing a method. A method given its own planned_memory
+   * uses only that memory, so it shares a buffer with another method only if
+   * the caller gives both the same memory, initialized once as
+   * Program::initialize_planned_buffer() describes.
    * @param[in] event_tracer Per-method event tracer to profile/trace methods
    * individually. When not given, the event tracer passed to the Module
    * constructor is used. Otherwise, this per-method event tracer takes
@@ -310,7 +328,8 @@ class Module {
   }
 
   /**
-   * Unload a specific method from the program.
+   * Unload a specific method from the program. A buffer the program marks as
+   * shared stays allocated, with its contents, until this Module is destroyed.
    *
    * @param[in] method_name The name of the method to unload.
    *
@@ -735,15 +754,20 @@ class Module {
     /// HierarchicalAllocator. Owns the storage backing the device span the
     /// allocator references, so it must outlive `planned_memory`.
     std::vector<runtime::etensor::Device> planned_devices;
+    /// Buffers this Module already initialized, which `planned_memory` reads.
+    std::unique_ptr<bool[]> initialized_buffers;
     std::unique_ptr<runtime::HierarchicalAllocator> planned_memory;
   };
-  std::unique_ptr<PlannedMemory> make_planned_memory(
-      const std::vector<size_t>& buffer_sizes);
-  std::unique_ptr<PlannedMemory> make_planned_memory_with_shared_arenas(
-      const std::vector<size_t>& buffer_sizes,
-      std::vector<std::vector<uint8_t>>& shared_arenas);
-  runtime::Result<std::unique_ptr<PlannedMemory>>
-  make_planned_memory_with_devices(
+  /// Backs a buffer that every method marking it shared reads and writes.
+  struct SharedBuffer {
+    std::vector<uint8_t> host_buffer;
+    runtime::DeviceMemoryBuffer device_buffer;
+    runtime::Span<uint8_t> span;
+  };
+  runtime::Result<runtime::Span<uint8_t>> get_shared_buffer(
+      size_t index,
+      runtime::etensor::Device device);
+  runtime::Result<std::unique_ptr<PlannedMemory>> make_planned_memory(
       const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta);
   runtime::Result<std::vector<size_t>> get_mem_planned_buffer_sizes(
       const std::string& method_name);
@@ -769,6 +793,7 @@ class Module {
   std::vector<std::unique_ptr<NamedDataMap>> named_data_maps_;
   std::unique_ptr<NamedDataMap> merged_data_map_;
   std::vector<std::vector<uint8_t>> shared_arenas_;
+  std::unordered_map<size_t, SharedBuffer> shared_buffers_;
   ET_DEPRECATED std::vector<uint8_t> debug_buffer_;
   // Module-owned deep-copy of the backend options most recently installed
   // via load(LoadBackendOptionsMap, ...). `backend_options_storage_` owns

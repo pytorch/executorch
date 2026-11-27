@@ -22,6 +22,9 @@ def define_common_targets(is_fbcode=False):
             "ET_MODULE_LINEAR_PROGRAM_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.pte])",
             "ET_MODULE_LINEAR_DATA_PATH": "$(location fbcode//executorch/test/models:exported_program_and_data[ModuleLinear.ptd])",
             "ET_MODULE_SHARED_STATE": "$(location fbcode//executorch/test/models:exported_programs[ModuleSharedState.pte])",
+            "ET_MODULE_SHARED_STATE_INITIALIZED": "$(location fbcode//executorch/test/models:exported_programs[ModuleSharedStateInitialized.pte])",
+            "ET_MODULE_SHARED_STATE_UNMARKED": "$(location fbcode//executorch/test/models:exported_programs[ModuleSharedStateUnmarked.pte])",
+            "ET_MODULE_SHARED_STATE_TWO_BUFFERS": "$(location fbcode//executorch/test/models:exported_programs[ModuleSharedStateTwoBuffers.pte])",
         }
 
         for aten_mode in get_aten_mode_options():
@@ -76,6 +79,8 @@ def define_common_targets(is_fbcode=False):
                 deps = [
                     "//executorch/kernels/portable:generated_lib" + aten_suffix,
                     "//executorch/extension/module:module" + aten_suffix,
+                    "//executorch/extension/tensor:tensor" + aten_suffix,
+                    "//executorch/runtime/core/exec_aten/testing_util:tensor_util" + aten_suffix,
                     "//executorch/runtime/core:device_allocator",
                     "//executorch/runtime/core:device_memory_buffer",
                     "//executorch/runtime/core/test:mock_cuda_allocator",
@@ -83,6 +88,7 @@ def define_common_targets(is_fbcode=False):
                 env = {
                     "ET_MODULE_ADD_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_program_with_device_info[ModuleAddWithDevice.pte])",
                     "ET_MODULE_ADD_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleAdd.pte])",
+                    "ET_MODULE_SHARED_STATE_WITH_DEVICE_PATH": "$(location fbcode//executorch/test/models:exported_programs[ModuleSharedStateWithDevice.pte])",
                 },
                 compiler_flags = [
                     "-Wno-error=deprecated-declarations",

@@ -26,9 +26,15 @@ add_custom_command(
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateInitialized.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateUnmarked.pte"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateTwoBuffers.pte"
          "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
-  COMMAND ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
-          "ModuleAdd,ModuleSharedState" --outdir "${CMAKE_CURRENT_BINARY_DIR}"
+         "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateWithDevice.pte"
+  COMMAND
+    ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
+    "ModuleAdd,ModuleSharedState,ModuleSharedStateInitialized,ModuleSharedStateUnmarked,ModuleSharedStateTwoBuffers,ModuleSharedStateWithDevice"
+    --outdir "${CMAKE_CURRENT_BINARY_DIR}"
   COMMAND
     ${PYTHON_EXECUTABLE} -m test.models.export_program --modules
     "ModuleAddMul,ModuleLinear" --external-constants --outdir
@@ -46,7 +52,11 @@ add_custom_target(
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateInitialized.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateUnmarked.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateTwoBuffers.pte"
           "${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+          "${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateWithDevice.pte"
 )
 
 set(test_env
@@ -56,7 +66,11 @@ set(test_env
     "ET_MODULE_LINEAR_PROGRAM_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.pte"
     "ET_MODULE_LINEAR_DATA_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleLinearProgram.ptd"
     "ET_MODULE_SHARED_STATE=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedState.pte"
+    "ET_MODULE_SHARED_STATE_INITIALIZED=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateInitialized.pte"
+    "ET_MODULE_SHARED_STATE_UNMARKED=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateUnmarked.pte"
+    "ET_MODULE_SHARED_STATE_TWO_BUFFERS=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateTwoBuffers.pte"
     "ET_MODULE_ADD_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleAddWithDevice.pte"
+    "ET_MODULE_SHARED_STATE_WITH_DEVICE_PATH=${CMAKE_CURRENT_BINARY_DIR}/ModuleSharedStateWithDevice.pte"
 )
 
 et_cxx_test(

@@ -149,6 +149,23 @@ class DiffPteTest(unittest.TestCase):
         self.assertIn("aten::add.out", pd.operators_only_in_a)
         self.assertIn("aten::mul.out", pd.operators_only_in_b)
 
+    def test_different_shared_buffers(self) -> None:
+        weights = struct.pack("<4f", 1.0, 2.0, 3.0, 4.0)
+        prog_a = _make_program_with_constant_tensor(weights, sizes=[2, 2])
+        prog_b = _make_program_with_constant_tensor(weights, sizes=[2, 2])
+        prog_b.execution_plan[0].shared_non_const_buffers = [1]
+
+        result = diff_pte(
+            _serialize_program(prog_a), _serialize_program(prog_b), "a.pte", "b.pte"
+        )
+        self.assertEqual(len(result.plan_diffs), 1)
+        pd = result.plan_diffs[0]
+        self.assertIsNone(pd.shared_non_const_buffers_a)
+        self.assertEqual(pd.shared_non_const_buffers_b, [1])
+        self.assertIn(
+            "shared_non_const_buffers: None vs [1]", format_diff_result(result)
+        )
+
     def test_different_evalue_int(self) -> None:
         """Non-tensor EValues with different values should be reported."""
         weights = struct.pack("<4f", 1.0, 2.0, 3.0, 4.0)

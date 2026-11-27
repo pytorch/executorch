@@ -78,11 +78,16 @@ class Program final {
   /**
    * The highest program schema version that this runtime can read.
    *
-   * Keep in sync with EXECUTORCH_SCHEMA_VERSION in
-   * //executorch/exir/version.py, which is the version that the exporter stamps
-   * into every PTE file.
+   * Keep in sync with MAX_EXECUTORCH_SCHEMA_VERSION in
+   * //executorch/exir/version.py, which is the highest version that the
+   * exporter stamps into a PTE file.
+   *
+   * Version 1 files have buffers that methods share. Program and Method do not
+   * check that a runner shares them: a runner that passes its own planned
+   * memory to load_method() must follow what load_method() says about
+   * MethodMeta::memory_planned_buffer_is_shared() to run them correctly.
    */
-  static constexpr uint32_t kMaxSupportedSchemaVersion = 0;
+  static constexpr uint32_t kMaxSupportedSchemaVersion = 1;
 
   /**
    * Loads a Program from the provided loader. The Program will hold a pointer
@@ -147,6 +152,9 @@ class Program final {
    * @param[in] memory_manager The allocators to use during initialization and
    *     execution of the loaded method. If `memory_manager.temp_allocator()` is
    *     null, the runtime will allocate temp memory using `et_pal_allocate()`.
+   *     A buffer that `MethodMeta::memory_planned_buffer_is_shared()` reports
+   *     is shared only between methods given the same memory for it here,
+   *     initialized once as initialize_planned_buffer() describes.
    * @param[in] event_tracer The event tracer to use for this method run.
    * @param[in] named_data_map An optional map of {name, blob} used to resolve
    *     data that is external to the PTE, if any.
@@ -170,6 +178,33 @@ class Program final {
    * @param[in] method_name The name of the method to get metadata for.
    */
   Result<MethodMeta> method_meta(const char* method_name) const;
+
+  /**
+   * Copies the stored initial data of every tensor that the named method plans
+   * in one memory-planned buffer into that buffer, without loading the method.
+   *
+   * The owner of a buffer that several methods share calls this for each of
+   * them when it creates the buffer, then marks the buffer initialized with
+   * HierarchicalAllocator::set_initialized_buffers() in every method it loads,
+   * so that loading a method never rewinds state another method has changed.
+   *
+   * @param[in] method_name The method whose tensors to initialize.
+   * @param[in] buffer_index The memory-planned buffer to initialize (0-based,
+   *     same indexing as MethodMeta::memory_planned_buffer_size()).
+   * @param[in] planned_memory Holds the buffer at `buffer_index`, with its
+   *     device if it is not host memory. Its other buffers are not touched.
+   *     The buffer must not be marked initialized in it yet.
+   * @param[in] named_data_map The map passed to load_method(), used to resolve
+   *     initial data that is external to the PTE, if any.
+   *
+   * @returns Error::Ok on success, Error::InvalidState if the buffer is
+   *     already marked initialized, or another error on failure.
+   */
+  ET_NODISCARD Error initialize_planned_buffer(
+      const char* method_name,
+      size_t buffer_index,
+      HierarchicalAllocator* planned_memory,
+      const NamedDataMap* named_data_map = nullptr) const;
 
   /**
    * DEPRECATED: Get the pytree encoding string for the output. Deprecated as

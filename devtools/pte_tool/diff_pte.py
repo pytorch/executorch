@@ -154,6 +154,8 @@ class ExecutionPlanDiff:
     delegates_only_in_b: List[str] = field(default_factory=list)
     non_const_buffer_sizes_a: Optional[List[int]] = None
     non_const_buffer_sizes_b: Optional[List[int]] = None
+    shared_non_const_buffers_a: Optional[List[int]] = None
+    shared_non_const_buffers_b: Optional[List[int]] = None
     value_count_a: Optional[int] = None
     value_count_b: Optional[int] = None
     instruction_count_a: Optional[int] = None
@@ -171,6 +173,7 @@ class ExecutionPlanDiff:
             or self.delegates_only_in_a
             or self.delegates_only_in_b
             or self.non_const_buffer_sizes_a is not None
+            or self.shared_non_const_buffers_a != self.shared_non_const_buffers_b
             or self.value_count_a is not None
             or self.instruction_count_a is not None
             or self.tensor_diffs
@@ -640,6 +643,10 @@ def _diff_execution_plan(  # noqa: C901
         diff.non_const_buffer_sizes_a = plan_a.non_const_buffer_sizes
         diff.non_const_buffer_sizes_b = plan_b.non_const_buffer_sizes
 
+    if plan_a.shared_non_const_buffers != plan_b.shared_non_const_buffers:
+        diff.shared_non_const_buffers_a = plan_a.shared_non_const_buffers
+        diff.shared_non_const_buffers_b = plan_b.shared_non_const_buffers
+
     # Compare value count
     num_values_a = len(plan_a.values)
     num_values_b = len(plan_b.values)
@@ -756,6 +763,12 @@ def format_diff_result(  # noqa: C901
             lines.append(
                 f"  non_const_buffer_sizes: {pd.non_const_buffer_sizes_a} "
                 f"vs {pd.non_const_buffer_sizes_b}"
+            )
+
+        if pd.shared_non_const_buffers_a != pd.shared_non_const_buffers_b:
+            lines.append(
+                f"  shared_non_const_buffers: {pd.shared_non_const_buffers_a} "
+                f"vs {pd.shared_non_const_buffers_b}"
             )
 
         if pd.value_count_a is not None:

@@ -59,6 +59,7 @@ from executorch.exir.passes.external_constants_pass import (
 from executorch.exir.passes.insert_write_back_for_buffers_pass import (
     insert_write_back_for_buffers_pass,
 )
+from executorch.exir.passes.memory_planning_pass import MemoryPlanningPass
 from executorch.exir.passes.normalize_view_copy_base_pass import (
     NormalizeViewCopyBasePass,
 )
@@ -223,6 +224,28 @@ def _update_exported_program_graph_module(
     return transformed_ep
 
 
+def _check_shared_initial_data(
+    initial_data: Dict[str, Dict[str, torch.Tensor]], shared: Set[str]
+) -> None:
+    """Refuses a shared buffer whose methods store different initial data.
+
+    A runtime may take the initial data of a shared buffer from any of those
+    methods, so they would start from different values.
+    """
+    for fqn in sorted(shared & initial_data.keys()):
+        (first, data), *others = initial_data[fqn].items()
+        for method, other in others:
+            # Bytes, not values, so identical data with NaNs counts as equal.
+            if not torch.equal(
+                data.contiguous().flatten().view(torch.uint8),
+                other.contiguous().flatten().view(torch.uint8),
+            ):
+                raise ValueError(
+                    f"Cannot share mutable buffer {fqn}: methods {first} and "
+                    f"{method} store different initial data"
+                )
+
+
 def _copy_module(new_prog, new_gm):
     new_prog.meta.update(new_gm.meta)
     new_prog.graph = new_gm.graph
@@ -236,6 +259,38 @@ def _copy_module(new_prog, new_gm):
             t = getattr(new_gm, node.target, None)
             if isinstance(t, torch.Tensor):
                 setattr(new_prog, node.target, t)
+
+
+def _used_buffers(program: ExportedProgram) -> Set[str]:
+    """The buffers that program reads or changes.
+
+    Non-strict export, the default, keeps every buffer of the module as an
+    input of every method, also one that the method never touches.
+    """
+    used = set(program.graph_signature.buffers_to_mutate.values())
+    for node in program.graph.find_nodes(op="placeholder"):
+        fqn = program.graph_signature.inputs_to_buffers.get(node.target)
+        if fqn is not None and node.users:
+            used.add(fqn)
+    return used
+
+
+def _remove_unused_buffers(program: ExportedProgram, fqns: Set[str]) -> None:
+    """Removes the inputs of the buffers in fqns that program does not use."""
+    unused = fqns - _used_buffers(program)
+    specs = program.graph_signature.input_specs
+    if not any(s.kind == InputKind.BUFFER and s.target in unused for s in specs):
+        return
+    signature = copy.copy(program.graph_signature)
+    signature.input_specs = []
+    for spec in specs:
+        if spec.kind == InputKind.BUFFER and spec.target in unused:
+            (node,) = program.graph.find_nodes(op="placeholder", target=spec.arg.name)
+            program.graph.erase_node(node)
+        else:
+            signature.input_specs.append(spec)
+    program._graph_signature = signature
+    program.graph_module.recompile()
 
 
 def _create_empty_etrecord():
@@ -1799,6 +1854,82 @@ class EdgeProgramManager:
             if program is not self._edge_programs[name]
         }
         execution_programs: Dict[str, ExportedProgram] = {}
+        if isinstance(config.memory_planning_pass, dict):
+            memory_planning_passes = list(config.memory_planning_pass.values())
+            sharing = {
+                name: p
+                for name, p in config.memory_planning_pass.items()
+                if isinstance(p, MemoryPlanningPass)
+                and p.share_mutable_buffers
+                and name in programs
+            }
+        else:
+            memory_planning_passes = [config.memory_planning_pass]
+            sharing = (
+                dict.fromkeys(programs, config.memory_planning_pass)
+                if isinstance(config.memory_planning_pass, MemoryPlanningPass)
+                and config.memory_planning_pass.share_mutable_buffers
+                else {}
+            )
+        shared = {
+            fqn
+            for name in sharing
+            for fqn in programs[name].graph_signature.buffers_to_mutate.values()
+        }
+        owned: Set[str] = set()
+        # A delegate that keeps its own copy of a buffer never sees the changes.
+        for name, program in programs.items():
+            for module in program.graph_module.modules():
+                if not is_lowered_module(module):
+                    continue
+                signature = module.original_module.graph_signature
+                if shared.intersection(signature.buffers):
+                    raise ValueError(
+                        f"Method {name} keeps its own copy of a mutable buffer "
+                        "that other methods share inside a delegate, so it would "
+                        "never see the changes"
+                    )
+                if name in sharing:
+                    owned.update(signature.buffers_to_mutate.values())
+        # Nor does host code see the changes a delegate makes to its own copy.
+        for name, program in programs.items():
+            if owned.intersection(_used_buffers(program)):
+                raise ValueError(
+                    f"Method {name} uses a mutable buffer that a delegate changes "
+                    "in its own copy, so it would never see the changes"
+                )
+        # Every method gets its shared state at the same place, so two
+        # passes laying it out would overlap.
+        if (
+            len(
+                {
+                    id(p)
+                    for name, p in sharing.items()
+                    if shared.intersection(_used_buffers(programs[name]))
+                }
+            )
+            > 1
+        ):
+            raise ValueError(
+                "Methods that share mutable buffers must be planned by one "
+                "MemoryPlanningPass instance"
+            )
+        # A method planned without sharing would read its own copy and never
+        # see the changes.
+        for name, program in programs.items():
+            if name not in sharing and shared.intersection(_used_buffers(program)):
+                raise ValueError(
+                    f"Method {name} uses a mutable buffer that other methods "
+                    "share, so it must be planned by the same "
+                    "MemoryPlanningPass instance"
+                )
+        # An earlier export can fail after some of its methods were planned.
+        for memory_planning_pass in memory_planning_passes:
+            if isinstance(memory_planning_pass, MemoryPlanningPass):
+                memory_planning_pass.reset()
+        planned_graph_modules: Dict[str, torch.fx.GraphModule] = {}
+        shared_buffers: Set[str] = set()
+        initial_data: Dict[str, Dict[str, torch.Tensor]] = defaultdict(dict)
         for name, program in programs.items():
             if config.do_quant_fusion_and_const_prop:
                 if program.graph_signature.backward_signature is not None:
@@ -1806,7 +1937,9 @@ class EdgeProgramManager:
                         "Cannot run do_quant_fusion_and_const_prop on a graph with a backward signature intended for on-device training."
                         " Please set do_quant_fusion_and_const_prop to False in the ExecutorchBackendConfig."
                     )
-                program = quant_fusion_and_const_prop_pass(program)
+                # A method that only reads a shared buffer must not fold its
+                # initial value: other methods change it.
+                program = quant_fusion_and_const_prop_pass(program, shared)
             if config.run_reinplace_pass or config.reinplace_extra_ops:
                 extra = config.reinplace_extra_ops or frozenset()
                 program = reinplace_pass(
@@ -1815,6 +1948,21 @@ class EdgeProgramManager:
                 )
             program = weights_to_outputs_pass(program)
             program = unsafe_remove_auto_functionalized_pass(program)
+            if isinstance(config.memory_planning_pass, dict):
+                memory_planning_pass = config.memory_planning_pass.get(
+                    name, ExecutorchBackendConfig().memory_planning_pass
+                )
+            else:
+                memory_planning_pass = config.memory_planning_pass
+            # Non-strict export keeps every buffer as an input of every method.
+            # A method that never uses one would store initial data for it,
+            # which can differ from the data of the methods that do, and get
+            # shared device memory it never touches.
+            if (
+                isinstance(memory_planning_pass, MemoryPlanningPass)
+                and memory_planning_pass.share_mutable_buffers
+            ):
+                _remove_unused_buffers(program, shared)
             gm, new_signature = insert_write_back_for_buffers_pass(program)
             new_gm = program.graph_module
             for p in edge_to_executorch_passes(
@@ -1852,18 +2000,23 @@ class EdgeProgramManager:
                 new_gm_res = external_mutable_weights_pass(new_gm, program)
                 new_gm = new_gm_res.graph_module
 
-            if isinstance(config.memory_planning_pass, dict):
-                memory_planning_pass = config.memory_planning_pass.get(
-                    name, ExecutorchBackendConfig().memory_planning_pass
-                )
-            else:
-                memory_planning_pass = config.memory_planning_pass
             # Propagate enable_non_cpu_memory_planning from the top-level config
             # to the pass instance so that device-aware partitioning is applied.
             if hasattr(memory_planning_pass, "enable_non_cpu_memory_planning"):
                 memory_planning_pass.enable_non_cpu_memory_planning = (
                     config.enable_non_cpu_memory_planning
                 )
+            if (
+                isinstance(memory_planning_pass, MemoryPlanningPass)
+                and memory_planning_pass.share_mutable_buffers
+            ):
+                shared_buffers |= set(new_signature.buffers_to_mutate.values())
+                for node in new_gm.graph.nodes:
+                    fqn = new_signature.inputs_to_buffers.get(node.target)
+                    if fqn is not None and node.meta.get("et_init_buffer"):
+                        initial_data[fqn][name] = program.state_dict.get(
+                            fqn, program.constants.get(fqn)
+                        )
             # TODO(jakeszwe): Follow up with compiler on if the deepcopy is necessary and if so how to make it work
             if hasattr(memory_planning_pass, "run"):
                 new_gm_res = memory_planning_pass.run(new_gm, new_signature)
@@ -1877,6 +2030,7 @@ class EdgeProgramManager:
 
             _copy_module(program.graph_module, new_gm)
             execution_programs[name] = program
+            planned_graph_modules[name] = new_gm
         # A folded program was lowered on a copy. Hand it to this manager too,
         # as every other program is lowered in place.
         self._folded_methods.update(folded)
@@ -1890,6 +2044,12 @@ class EdgeProgramManager:
             memory_planning_pass = config.memory_planning_pass
             if hasattr(memory_planning_pass, "run_multimethod"):
                 memory_planning_pass.run_multimethod()
+        # After run_multimethod, which reports a shape or dtype mismatch first.
+        _check_shared_initial_data(initial_data, shared_buffers)
+        # run_multimethod updates the planned graph modules after their metadata
+        # was copied above.
+        for name, program in execution_programs.items():
+            program.graph_module.meta.update(planned_graph_modules[name].meta)
 
         et_pm = ExecutorchProgramManager(
             execution_programs,

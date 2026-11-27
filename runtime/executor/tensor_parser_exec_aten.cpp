@@ -210,6 +210,17 @@ namespace {
   return ::executorch::runtime::etensor::DeviceType::CPU;
 }
 
+/// Whether the owner of the planned buffer that `allocation_info` points into
+/// has already initialized it, so a tensor's initial data must not overwrite
+/// it.
+bool isPlannedBufferInitialized(
+    const executorch_flatbuffer::AllocationDetails* allocation_info,
+    const HierarchicalAllocator* allocator) {
+  const auto initialized = allocator->initialized_buffers();
+  const uint32_t memory_id = allocation_info->memory_id() - 1;
+  return memory_id < initialized.size() && initialized[memory_id];
+}
+
 /// Copies `nbytes` of host `data` to `dst` in the memory of `device`. A data
 /// loader writes with the CPU, so it cannot load into device memory directly.
 ET_NODISCARD Error copyToDevice(
@@ -309,6 +320,9 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
       if (!planned_ptr.ok()) {
         return planned_ptr.error();
       }
+      if (isPlannedBufferInitialized(allocation_info, allocator)) {
+        return planned_ptr;
+      }
       const auto device = getPlannedBufferDevice(allocation_info, allocator);
       auto load_error = device.is_cpu()
           ? named_data_map->load_data_into(fqn, planned_ptr.get(), nbytes)
@@ -344,7 +358,7 @@ ET_NODISCARD Result<void*> getTensorDataPtr(
     }
     // A program whose initial data is all empty has no mutable segment to
     // load an empty tensor from.
-    if (nbytes == 0) {
+    if (nbytes == 0 || isPlannedBufferInitialized(allocation_info, allocator)) {
       return planned_ptr;
     }
     const auto device = getPlannedBufferDevice(allocation_info, allocator);

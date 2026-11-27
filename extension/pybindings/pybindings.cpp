@@ -4189,16 +4189,28 @@ class ProgramMemory {
   /// `MemoryManager::has_device_memory()` false for CPU-only programs.
   /// Otherwise it holds one entry per buffer, indexed like `sizes`.
   ///
+  /// `shared` is empty, or indexed like `sizes`: a non-empty entry is memory
+  /// another owner allocated and lends to several methods, which this uses
+  /// instead of allocating its own. `owners` keeps that memory alive.
+  /// `initialized` is empty, or indexed like `sizes`: true for a buffer whose
+  /// owner already initialized it, so loading a method leaves it as it is.
+  ///
   /// Members initialize in declaration order and each one reads the members
   /// declared before it, so that order is load-bearing. Device buffers come
   /// first so that a device that is missing or out of memory throws before the
   /// host arenas are allocated and zero-filled, rather than after.
   ProgramMemory(
       std::vector<int64_t>&& sizes,
-      std::vector<runtime::etensor::Device>&& devices)
+      std::vector<runtime::etensor::Device>&& devices,
+      std::vector<Span<uint8_t>>&& shared = {},
+      std::vector<std::shared_ptr<const void>>&& owners = {},
+      const std::vector<bool>& initialized = {})
       : runtime_allocator_(),
         planned_sizes_(std::move(sizes)),
         planned_devices_(std::move(devices)),
+        shared_spans_(std::move(shared)),
+        owners_(std::move(owners)),
+        initialized_buffers_(std::make_unique<bool[]>(initialized.size())),
         device_buffers_(allocate_device_buffers()),
         non_const_buffers_(allocate_host_buffers()),
         non_const_spans_(create_non_const_spans()),
@@ -4207,7 +4219,20 @@ class ProgramMemory {
             &const_allocator_,
             &non_const_allocator_,
             &runtime_allocator_,
-            &temp_allocator_) {}
+            &temp_allocator_) {
+    if (!initialized.empty()) {
+      THROW_IF_ERROR(
+          initialized.size() == planned_sizes_.size() ? Error::Ok
+                                                      : Error::InvalidArgument,
+          "Have %zu planned buffer sizes but %zu initialized flags",
+          planned_sizes_.size(),
+          initialized.size());
+      std::copy(
+          initialized.begin(), initialized.end(), initialized_buffers_.get());
+      non_const_allocator_.set_initialized_buffers(
+          {initialized_buffers_.get(), initialized.size()});
+    }
+  }
 
   explicit ProgramMemory(std::vector<int64_t>&& sizes)
       : ProgramMemory(std::move(sizes), {}) {}
@@ -4216,6 +4241,11 @@ class ProgramMemory {
   /// must outlive this pointer.
   MemoryManager* mem_manager() {
     return &mem_manager_;
+  }
+
+  /// The memory backing planned buffer `index`.
+  Span<uint8_t> buffer(size_t index) const {
+    return non_const_spans_.at(index);
   }
 
   bool owns_data(const void* data) const {
@@ -4261,6 +4291,12 @@ class ProgramMemory {
 
   std::vector<runtime::etensor::Device> planned_devices_;
 
+  std::vector<Span<uint8_t>> shared_spans_;
+
+  std::vector<std::shared_ptr<const void>> owners_;
+
+  std::unique_ptr<bool[]> initialized_buffers_;
+
   // Backs device-tagged buffers; the entry is empty for a CPU-tagged buffer.
   // Parallel to non_const_buffers_ so both index by planned buffer id. Empty
   // for an all-host program.
@@ -4279,6 +4315,11 @@ class ProgramMemory {
     return index < planned_devices_.size() && !planned_devices_[index].is_cpu();
   }
 
+  bool is_shared_buffer(size_t index) const {
+    return index < shared_spans_.size() &&
+        shared_spans_[index].data() != nullptr;
+  }
+
   std::vector<HostBuffer> allocate_host_buffers() {
     bool has_device_buffer = false;
     for (size_t i = 0; i < planned_sizes_.size(); ++i) {
@@ -4287,7 +4328,7 @@ class ProgramMemory {
     std::vector<HostBuffer> result;
     result.reserve(planned_sizes_.size());
     for (size_t i = 0; i < planned_sizes_.size(); ++i) {
-      if (is_device_buffer(i)) {
+      if (is_device_buffer(i) || is_shared_buffer(i)) {
         result.emplace_back();
         continue;
       }
@@ -4324,7 +4365,7 @@ class ProgramMemory {
         planned_devices_.size());
     result.reserve(planned_sizes_.size());
     for (size_t i = 0; i < planned_sizes_.size(); ++i) {
-      if (!is_device_buffer(i)) {
+      if (!is_device_buffer(i) || is_shared_buffer(i)) {
         result.emplace_back();
         continue;
       }
@@ -4348,7 +4389,9 @@ class ProgramMemory {
     std::vector<Span<uint8_t>> result;
     result.reserve(planned_sizes_.size());
     for (size_t i = 0; i < planned_sizes_.size(); ++i) {
-      if (is_device_buffer(i)) {
+      if (is_shared_buffer(i)) {
+        result.push_back(shared_spans_[i]);
+      } else if (is_device_buffer(i)) {
         result.push_back(device_buffers_[i].as_span());
       } else {
         result.push_back(
@@ -4382,11 +4425,15 @@ bool has_device_buffers(const MethodMeta& method_meta) {
 }
 
 /// Arenas sized and placed for a single method, used when that method's
-/// buffers cannot come from the program-wide host arenas. Returns nullptr when
-/// every buffer is on the host, so one pass over the metadata answers both
-/// whether the method needs its own arenas and how big they are.
+/// buffers cannot all come from the program-wide host arenas. Returns nullptr
+/// when every buffer is on the host and none is borrowed, so one pass over the
+/// metadata answers both whether the method needs its own arenas and how big
+/// they are.
 std::shared_ptr<ProgramMemory> make_method_memory(
-    const MethodMeta& method_meta) {
+    const MethodMeta& method_meta,
+    std::vector<Span<uint8_t>>&& shared,
+    std::vector<std::shared_ptr<const void>>&& owners,
+    const std::vector<bool>& initialized) {
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
   std::vector<int64_t> sizes;
   std::vector<runtime::etensor::Device> devices;
@@ -4403,10 +4450,18 @@ std::shared_ptr<ProgramMemory> make_method_memory(
     sizes.push_back(size.get());
     devices.push_back(device.get());
   }
-  if (!needs_device_memory) {
+  if (!needs_device_memory && owners.empty()) {
     return nullptr;
   }
-  return std::make_shared<ProgramMemory>(std::move(sizes), std::move(devices));
+  if (!needs_device_memory) {
+    devices.clear();
+  }
+  return std::make_shared<ProgramMemory>(
+      std::move(sizes),
+      std::move(devices),
+      std::move(shared),
+      std::move(owners),
+      initialized);
 }
 
 struct PyMethod final {
@@ -5459,31 +5514,52 @@ struct PyProgram final {
     for (size_t i = 0; i < state_->program_->num_methods(); ++i) {
       auto name = state_->program_->get_method_name(i).get();
       auto method_meta = state_->program_->method_meta(name).get();
-      // A device-planned method gets its own arenas in load_method and never
-      // reads these, so letting its sizes in would only grow the host arenas
-      // the other methods share.
-      if (has_device_buffers(method_meta)) {
-        continue;
-      }
+      const bool device_method = has_device_buffers(method_meta);
       for (size_t j = 0; j < method_meta.num_memory_planned_buffers(); ++j) {
         auto size = method_meta.memory_planned_buffer_size(j);
         THROW_IF_ERROR(
             size.error(), "Failed to get size of planned buffer %zu", j);
         int64_t buffer_size = size.get();
-        if (non_const_buffer_sizes.find(j) == non_const_buffer_sizes.end()) {
-          non_const_buffer_sizes.insert({j, buffer_size});
-        } else {
-          non_const_buffer_sizes[j] =
-              std::max(non_const_buffer_sizes[j], buffer_size);
+        auto device = method_meta.memory_planned_buffer_device(j);
+        THROW_IF_ERROR(
+            device.error(), "Failed to get device of planned buffer %zu", j);
+        auto is_shared = method_meta.memory_planned_buffer_is_shared(j);
+        THROW_IF_ERROR(
+            is_shared.error(),
+            "Failed to get sharing of planned buffer %zu",
+            j);
+        if (is_shared.get()) {
+          auto shared = shared_buffers_.find(j);
+          if (shared == shared_buffers_.end()) {
+            shared =
+                shared_buffers_.emplace(j, SharedBuffer{device.get()}).first;
+          }
+          shared->second.one_device &= shared->second.device == device.get();
+          shared->second.size = std::max(shared->second.size, buffer_size);
+          shared->second.methods.push_back(name);
+          // It gets an allocation of its own, never one of these arenas,
+          // which a method that does not mark it may use for anything else.
+          continue;
         }
+        // A device-planned method gets its own arenas in load_method, so
+        // letting its sizes in would only grow the host arenas the other
+        // methods share.
+        if (device_method) {
+          continue;
+        }
+        auto& max_size = non_const_buffer_sizes[j];
+        max_size = std::max(max_size, buffer_size);
       }
     }
 
-    // Allocate the shared host arenas.
+    // Allocate the shared host arenas. Shared buffers can leave gaps, which
+    // keep their place so every index still names its buffer.
     std::vector<int64_t> planned_sizes;
-    planned_sizes.reserve(non_const_buffer_sizes.size());
+    if (!non_const_buffer_sizes.empty()) {
+      planned_sizes.resize(non_const_buffer_sizes.rbegin()->first + 1, 0);
+    }
     for (const auto& entry : non_const_buffer_sizes) {
-      planned_sizes.push_back(entry.second);
+      planned_sizes[entry.first] = entry.second;
     }
 
     memory_ = std::make_shared<ProgramMemory>(std::move(planned_sizes));
@@ -5566,7 +5642,12 @@ struct PyProgram final {
     // accelerator method cannot make the rest of the program unloadable. A
     // host-only method keeps sharing the program-wide arenas, so its planned
     // memory is not isolated from the other host-only methods of this program.
-    auto method_memory = make_method_memory(meta.get());
+    auto shared = shared_buffers(meta.get());
+    auto method_memory = make_method_memory(
+        meta.get(),
+        std::move(shared.spans),
+        std::move(shared.owners),
+        shared.initialized);
     auto memory = method_memory ? std::move(method_memory) : memory_;
     Result<Method> res = state_->program_->load_method(
         method_name.c_str(),
@@ -5634,9 +5715,125 @@ struct PyProgram final {
   }
 
  private:
+  /// A buffer every method that marks it shared reads from one allocation.
+  struct SharedBuffer {
+    runtime::etensor::Device device;
+    /// False if methods place it on different devices. Then, as in Module,
+    /// no method that marks it loads.
+    bool one_device = true;
+    int64_t size = 0;
+    /// The methods that mark it.
+    std::vector<std::string> methods;
+    /// Claimed when the first method using it loads, like device memory, and
+    /// kept for the life of the program.
+    std::shared_ptr<void> allocation;
+    Span<uint8_t> span;
+  };
+
+  /// The memory a method borrows, indexed like its planned buffers and empty
+  /// for the buffers it allocates itself, the owners keeping it alive, and
+  /// which of it is already initialized.
+  struct SharedSpans {
+    std::vector<Span<uint8_t>> spans;
+    std::vector<std::shared_ptr<const void>> owners;
+    std::vector<bool> initialized;
+  };
+
+  /// Allocates `buffer` and copies in the initial data of every method that
+  /// shares it, once, so that loading a method later never rewinds state
+  /// another method has changed.
+  void claim_shared_buffer(size_t index, SharedBuffer& buffer) {
+    std::shared_ptr<void> allocation;
+    Span<uint8_t> span;
+    if (buffer.device.is_cpu()) {
+      auto host = std::make_shared<std::vector<uint8_t>>(buffer.size);
+      span = {host->data(), host->size()};
+      allocation = std::move(host);
+    } else {
+      auto device = DeviceMemoryBuffer::create(
+          buffer.size, buffer.device.type(), buffer.device.index());
+      THROW_IF_ERROR(
+          device.error(),
+          "Failed to allocate %" PRId64
+          " bytes for shared buffer %zu on device %d:%d",
+          buffer.size,
+          index,
+          static_cast<int>(buffer.device.type()),
+          static_cast<int>(buffer.device.index()));
+      auto owned =
+          std::make_shared<DeviceMemoryBuffer>(std::move(device.get()));
+      span = owned->as_span();
+      allocation = std::move(owned);
+    }
+    std::vector<Span<uint8_t>> spans(index + 1);
+    spans[index] = span;
+    std::vector<runtime::etensor::Device> devices(
+        index + 1,
+        runtime::etensor::Device{runtime::etensor::DeviceType::CPU, 0});
+    devices[index] = buffer.device;
+    HierarchicalAllocator allocator(
+        {spans.data(), spans.size()}, {devices.data(), devices.size()});
+    for (const auto& name : buffer.methods) {
+      Error error = state_->program_->initialize_planned_buffer(
+          name.c_str(), index, &allocator, state_->data_map_.get());
+      THROW_IF_ERROR(
+          error,
+          "Failed to initialize shared buffer %zu for method %s, error: 0x%" PRIx32,
+          index,
+          name.c_str(),
+          static_cast<uint32_t>(error));
+    }
+    buffer.allocation = std::move(allocation);
+    buffer.span = span;
+  }
+
+  SharedSpans shared_buffers(const MethodMeta& method_meta) {
+    const size_t num_buffers = method_meta.num_memory_planned_buffers();
+    std::vector<Span<uint8_t>> spans(num_buffers);
+    std::vector<std::shared_ptr<const void>> owners;
+    std::vector<bool> initialized(num_buffers, false);
+    for (auto& [index, buffer] : shared_buffers_) {
+      if (index >= num_buffers) {
+        continue;
+      }
+      auto is_shared = method_meta.memory_planned_buffer_is_shared(index);
+      THROW_IF_ERROR(
+          is_shared.error(),
+          "Failed to get sharing of planned buffer %zu",
+          index);
+      if (!is_shared.get()) {
+        continue;
+      }
+      THROW_IF_ERROR(
+          buffer.one_device ? Error::Ok : Error::InvalidProgram,
+          "Methods place shared planned buffer %zu on different devices",
+          index);
+      if (!buffer.allocation) {
+        claim_shared_buffer(index, buffer);
+      }
+      spans[index] = buffer.span;
+      initialized[index] = true;
+      owners.push_back(buffer.allocation);
+    }
+    // A host-only method keeps its other buffers in the program-wide arenas.
+    if (!owners.empty() && !has_device_buffers(method_meta)) {
+      for (size_t i = 0; i < num_buffers; ++i) {
+        if (!initialized[i]) {
+          spans[i] = memory_->buffer(i);
+        }
+      }
+      owners.push_back(memory_);
+    }
+    if (owners.empty()) {
+      initialized.clear();
+    }
+    return {std::move(spans), std::move(owners), std::move(initialized)};
+  }
+
   std::shared_ptr<ProgramMemory> memory_;
   std::shared_ptr<ProgramState> state_;
   size_t debug_buffer_size_;
+  std::map<size_t, SharedBuffer> shared_buffers_;
 };
 
 void create_profile_block(const std::string& name) {

@@ -216,6 +216,8 @@ def define_common_targets(is_fbcode = False):
             "//executorch/exir:memory_planning",
             "//executorch/exir:pass_base",
             "//executorch/exir:pass_manager",
+            "//executorch/exir/backend/test:device_util",
+            "//executorch/exir/backend/test:op_partitioner_demo",
             "//executorch/exir/passes:lib",
             "//executorch/exir/passes:sym_shape_eval_pass",
             "//executorch/examples/models/llama:custom_kv_cache",

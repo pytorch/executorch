@@ -152,6 +152,20 @@ TEST_F(HierarchicalAllocatorTest, MismatchedDeviceCountAborts) {
   ET_EXPECT_DEATH(HierarchicalAllocator({buffers, n_buffers}, device_span), "");
 }
 
+TEST_F(HierarchicalAllocatorTest, MismatchedInitializedBufferCountAborts) {
+  constexpr size_t n_buffers = 2;
+  uint8_t mem0[4];
+  uint8_t mem1[4];
+  Span<uint8_t> buffers[n_buffers]{
+      {mem0, sizeof(mem0)},
+      {mem1, sizeof(mem1)},
+  };
+  HierarchicalAllocator allocator({buffers, n_buffers});
+
+  bool initialized[] = {true};
+  ET_EXPECT_DEATH(allocator.set_initialized_buffers({initialized, 1}), "");
+}
+
 // TODO(T162089316): Tests the deprecated API. Remove this when removing the
 // API.
 TEST_F(HierarchicalAllocatorTest, DEPRECATEDSmoke) {

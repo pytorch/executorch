@@ -8,6 +8,7 @@
 
 #include <executorch/extension/module/module.h>
 
+#include <algorithm>
 #include <functional>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
@@ -408,48 +409,78 @@ runtime::Result<std::unordered_set<std::string>> Module::method_names() {
   return result;
 }
 
-std::unique_ptr<Module::PlannedMemory> Module::make_planned_memory(
-    const std::vector<size_t>& buffer_sizes) {
-  auto planned = std::make_unique<PlannedMemory>();
-  planned->planned_buffers.reserve(buffer_sizes.size());
-  planned->planned_spans.reserve(buffer_sizes.size());
-  for (size_t size : buffer_sizes) {
-    planned->planned_buffers.emplace_back(size);
-    planned->planned_spans.emplace_back(
-        planned->planned_buffers.back().data(), size);
-  }
-  planned->planned_memory =
-      std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
-          planned->planned_spans.data(), planned->planned_spans.size()));
-  return planned;
-}
-
-std::unique_ptr<Module::PlannedMemory>
-Module::make_planned_memory_with_shared_arenas(
-    const std::vector<size_t>& buffer_sizes,
-    std::vector<std::vector<uint8_t>>& shared_arenas) {
-  auto planned = std::make_unique<PlannedMemory>();
-  planned->planned_buffers.reserve(buffer_sizes.size());
-  planned->planned_spans.reserve(buffer_sizes.size());
-  for (size_t i = 0; i < buffer_sizes.size(); i++) {
-    if (i < shared_arenas.size()) {
-      planned->planned_buffers.emplace_back();
-      planned->planned_spans.emplace_back(
-          shared_arenas[i].data(), shared_arenas[i].size());
-    } else {
-      planned->planned_buffers.emplace_back(buffer_sizes[i]);
-      planned->planned_spans.emplace_back(
-          planned->planned_buffers.back().data(), buffer_sizes[i]);
+runtime::Result<runtime::Span<uint8_t>> Module::get_shared_buffer(
+    size_t index,
+    runtime::etensor::Device device) {
+  auto found = shared_buffers_.find(index);
+  if (found == shared_buffers_.end()) {
+    // Size the allocation for every method that shares it, so a method loaded
+    // later never needs it to grow under the methods already using it.
+    int64_t size = 0;
+    std::vector<const char*> sharing_methods;
+    // Program order, as the Python runtime uses.
+    for (size_t i = 0; i < program_->num_methods(); ++i) {
+      auto name = program_->get_method_name(i);
+      ET_CHECK_OK_OR_RETURN_ERROR(name.error());
+      auto meta = program_->method_meta(name.get());
+      ET_CHECK_OK_OR_RETURN_ERROR(meta.error());
+      if (index >= meta->num_memory_planned_buffers()) {
+        continue;
+      }
+      auto shared = meta->memory_planned_buffer_is_shared(index);
+      ET_CHECK_OK_OR_RETURN_ERROR(shared.error());
+      if (!shared.get()) {
+        continue;
+      }
+      auto other_device = meta->memory_planned_buffer_device(index);
+      ET_CHECK_OK_OR_RETURN_ERROR(other_device.error());
+      ET_CHECK_OR_RETURN_ERROR(
+          other_device.get() == device,
+          InvalidProgram,
+          "Methods place shared buffer %zu on different devices",
+          index);
+      auto other_size = meta->memory_planned_buffer_size(index);
+      ET_CHECK_OK_OR_RETURN_ERROR(other_size.error());
+      size = std::max(size, other_size.get());
+      sharing_methods.push_back(name.get());
     }
+    SharedBuffer buffer;
+    if (device.is_cpu()) {
+      buffer.host_buffer.resize(size);
+      buffer.span = {buffer.host_buffer.data(), buffer.host_buffer.size()};
+    } else {
+      auto device_buffer = runtime::DeviceMemoryBuffer::create(
+          size, device.type(), device.index());
+      ET_CHECK_OK_OR_RETURN_ERROR(
+          device_buffer.error(),
+          "Failed to allocate device memory for shared buffer %zu (device_type=%d, device_index=%d)",
+          index,
+          static_cast<int>(device.type()),
+          static_cast<int>(device.index()));
+      buffer.device_buffer = std::move(device_buffer.get());
+      buffer.span = buffer.device_buffer.as_span();
+    }
+    // Initialize it for every method that shares it now, once, so that
+    // loading a method later never rewinds state another method has changed.
+    std::vector<runtime::Span<uint8_t>> spans(index + 1);
+    spans[index] = buffer.span;
+    std::vector<runtime::etensor::Device> devices(
+        index + 1,
+        runtime::etensor::Device{runtime::etensor::DeviceType::CPU, 0});
+    devices[index] = device;
+    runtime::HierarchicalAllocator allocator(
+        {spans.data(), spans.size()}, {devices.data(), devices.size()});
+    for (const char* name : sharing_methods) {
+      ET_CHECK_OK_OR_RETURN_ERROR(program_->initialize_planned_buffer(
+          name, index, &allocator, merged_data_map_.get()));
+    }
+    found = shared_buffers_.emplace(index, std::move(buffer)).first;
   }
-  planned->planned_memory =
-      std::make_unique<runtime::HierarchicalAllocator>(runtime::Span(
-          planned->planned_spans.data(), planned->planned_spans.size()));
-  return planned;
+  return found->second.span;
 }
 
 runtime::Result<std::unique_ptr<Module::PlannedMemory>>
-Module::make_planned_memory_with_devices(
+Module::make_planned_memory(
     const ET_RUNTIME_NAMESPACE::MethodMeta& method_meta) {
   auto planned = std::make_unique<PlannedMemory>();
   const size_t num_buffers = method_meta.num_memory_planned_buffers();
@@ -457,17 +488,75 @@ Module::make_planned_memory_with_devices(
   planned->planned_spans.reserve(num_buffers);
   planned->device_buffers.reserve(num_buffers);
   planned->planned_devices.reserve(num_buffers);
+  planned->initialized_buffers = std::make_unique<bool[]>(num_buffers);
 
+  if (share_memory_arenas_) {
+    // A program that marks no buffer relies on the host buffers at mem_id 1
+    // and 2 being shared, so state it plans in device memory would stay
+    // private.
+    bool marks_shared_buffers = false;
+    auto method_names_res = method_names();
+    ET_CHECK_OK_OR_RETURN_ERROR(method_names_res.error());
+    for (const auto& name : method_names_res.get()) {
+      auto meta = program_->method_meta(name.c_str());
+      ET_CHECK_OK_OR_RETURN_ERROR(meta.error());
+      for (size_t i = 0; i < meta->num_memory_planned_buffers(); ++i) {
+        auto shared = meta->memory_planned_buffer_is_shared(i);
+        ET_CHECK_OK_OR_RETURN_ERROR(shared.error());
+        marks_shared_buffers |= shared.get();
+      }
+    }
+    for (size_t i = 0; !marks_shared_buffers && i < num_buffers; ++i) {
+      auto device = method_meta.memory_planned_buffer_device(i);
+      ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+      ET_CHECK_OR_RETURN_ERROR(
+          device->is_cpu(),
+          NotSupported,
+          "share_memory_arenas does not work with device memory in a program "
+          "that does not mark its shared buffers. Export it with "
+          "share_mutable_buffers=True, or disable share_memory_arenas.");
+    }
+  }
+
+  bool has_device_buffers = false;
+  bool has_shared_buffers = false;
   for (size_t i = 0; i < num_buffers; ++i) {
     auto size = method_meta.memory_planned_buffer_size(i);
     ET_CHECK_OK_OR_RETURN_ERROR(
         size.error(), "Failed to get buffer size for index %zu", i);
+    // A failed device query must not read as "this buffer is on the host",
+    // which would silently hand a backend host memory.
     auto device = method_meta.memory_planned_buffer_device(i);
     ET_CHECK_OK_OR_RETURN_ERROR(
         device.error(), "Failed to get buffer device for index %zu", i);
+    auto shared = method_meta.memory_planned_buffer_is_shared(i);
+    ET_CHECK_OK_OR_RETURN_ERROR(
+        shared.error(), "Failed to get buffer sharing for index %zu", i);
     planned->planned_devices.push_back(device.get());
+    has_device_buffers |= !device->is_cpu();
 
-    if (device->is_cpu()) {
+    if (shared.get()) {
+      auto span = get_shared_buffer(i, device.get());
+      ET_CHECK_OK_OR_RETURN_ERROR(span.error());
+      planned->planned_buffers.emplace_back();
+      planned->planned_spans.push_back(span.get());
+      planned->initialized_buffers[i] = true;
+      has_shared_buffers = true;
+    } else if (device->is_cpu() && share_memory_arenas_ && i < 2) {
+      if (shared_arenas_.empty()) {
+        auto max_res = get_max_mem_planned_buffer_sizes();
+        ET_CHECK_OK_OR_RETURN_ERROR(max_res.error());
+        auto& max_sizes = max_res.get();
+        // Only share for mem_id=1,2.
+        size_t shared_count = (max_sizes.size() > 2) ? 2 : max_sizes.size();
+        for (size_t j = 0; j < shared_count; j++) {
+          shared_arenas_.emplace_back(max_sizes[j]);
+        }
+      }
+      planned->planned_buffers.emplace_back();
+      planned->planned_spans.emplace_back(
+          shared_arenas_[i].data(), shared_arenas_[i].size());
+    } else if (device->is_cpu()) {
       planned->planned_buffers.emplace_back(size.get());
       planned->planned_spans.emplace_back(
           planned->planned_buffers.back().data(), size.get());
@@ -490,13 +579,21 @@ Module::make_planned_memory_with_devices(
     }
   }
 
+  runtime::Span<runtime::Span<uint8_t>> spans(
+      planned->planned_spans.data(), planned->planned_spans.size());
   // HierarchicalAllocator owns the per-buffer Device metadata so the
   // MemoryManager can later expose it via planned_buffer_devices().
-  planned->planned_memory = std::make_unique<runtime::HierarchicalAllocator>(
-      runtime::Span<runtime::Span<uint8_t>>(
-          planned->planned_spans.data(), planned->planned_spans.size()),
-      runtime::Span<const runtime::etensor::Device>(
-          planned->planned_devices.data(), planned->planned_devices.size()));
+  planned->planned_memory = has_device_buffers
+      ? std::make_unique<runtime::HierarchicalAllocator>(
+            spans,
+            runtime::Span<const runtime::etensor::Device>(
+                planned->planned_devices.data(),
+                planned->planned_devices.size()))
+      : std::make_unique<runtime::HierarchicalAllocator>(spans);
+  if (has_shared_buffers) {
+    planned->planned_memory->set_initialized_buffers(
+        {planned->initialized_buffers.get(), num_buffers});
+  }
   return planned;
 }
 
@@ -528,11 +625,18 @@ Module::get_max_mem_planned_buffer_sizes() {
     auto sizes_res = get_mem_planned_buffer_sizes(name);
     ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
     auto& sizes = sizes_res.get();
+    auto meta = program_->method_meta(name.c_str());
+    ET_CHECK_OK_OR_RETURN_ERROR(meta.error());
     if (sizes.size() > result.size()) {
       result.resize(sizes.size(), 0);
     }
     for (size_t i = 0; i < sizes.size(); i++) {
-      if (sizes[i] > result[i]) {
+      // Device and shared buffers never come from the host arenas this sizes.
+      auto device = meta->memory_planned_buffer_device(i);
+      ET_CHECK_OK_OR_RETURN_ERROR(device.error());
+      auto shared = meta->memory_planned_buffer_is_shared(i);
+      ET_CHECK_OK_OR_RETURN_ERROR(shared.error());
+      if (device->is_cpu() && !shared.get() && sizes[i] > result[i]) {
         result[i] = sizes[i];
       }
     }
@@ -567,64 +671,12 @@ runtime::Error Module::load_method(
     MethodHolder method_holder;
 
     if (!planned_memory) {
-      // Check if any buffers need device memory allocation.
       auto meta_res = program_->method_meta(method_name.c_str());
       ET_CHECK_OK_OR_RETURN_ERROR(meta_res.error());
-      auto& meta = meta_res.get();
-
-      // A failed device query must not read as "this buffer is on the host",
-      // which would silently hand a backend host memory. The loop bounds i by
-      // num_memory_planned_buffers(), so the callee's range check cannot fire
-      // today; this keeps the failure handled if that ever stops holding.
-      bool has_device_buffers = false;
-      for (size_t i = 0; i < meta.num_memory_planned_buffers(); ++i) {
-        auto dev = meta.memory_planned_buffer_device(i);
-        ET_CHECK_OK_OR_RETURN_ERROR(
-            dev.error(), "Failed to get buffer device for index %zu", i);
-        if (!dev->is_cpu()) {
-          has_device_buffers = true;
-          break;
-        }
-      }
-
-      if (has_device_buffers) {
-        // Device memory with shared arenas is not yet supported.
-        ET_CHECK_OR_RETURN_ERROR(
-            !share_memory_arenas_,
-            NotSupported,
-            "Device memory buffers are not yet compatible with "
-            "share_memory_arenas. Please disable share_memory_arenas "
-            "when using models with device-planned memory.");
-
-        // Device-aware path: allocate CPU and device buffers. The device
-        // span is owned by the HierarchicalAllocator inside PlannedMemory.
-        auto planned_res = make_planned_memory_with_devices(meta);
-        ET_CHECK_OK_OR_RETURN_ERROR(planned_res.error());
-        method_holder.planned_memory = std::move(planned_res.get());
-        planned_memory = method_holder.planned_memory->planned_memory.get();
-      } else if (!share_memory_arenas_) {
-        auto sizes_res = get_mem_planned_buffer_sizes(method_name);
-        ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
-        method_holder.planned_memory = make_planned_memory(sizes_res.get());
-        planned_memory = method_holder.planned_memory->planned_memory.get();
-      } else {
-        auto sizes_res = get_mem_planned_buffer_sizes(method_name);
-        ET_CHECK_OK_OR_RETURN_ERROR(sizes_res.error());
-        auto& sizes = sizes_res.get();
-        if (shared_arenas_.empty()) {
-          auto max_res = get_max_mem_planned_buffer_sizes();
-          ET_CHECK_OK_OR_RETURN_ERROR(max_res.error());
-          auto& max_sizes = max_res.get();
-          // Only share for mem_id=1,2.
-          size_t shared = (max_sizes.size() > 2) ? 2 : max_sizes.size();
-          for (size_t i = 0; i < shared; i++) {
-            shared_arenas_.emplace_back(max_sizes[i]);
-          }
-        }
-        method_holder.planned_memory =
-            make_planned_memory_with_shared_arenas(sizes, shared_arenas_);
-        planned_memory = method_holder.planned_memory->planned_memory.get();
-      }
+      auto planned_res = make_planned_memory(meta_res.get());
+      ET_CHECK_OK_OR_RETURN_ERROR(planned_res.error());
+      method_holder.planned_memory = std::move(planned_res.get());
+      planned_memory = method_holder.planned_memory->planned_memory.get();
     }
 
     method_holder.memory_manager = std::make_unique<runtime::MemoryManager>(

@@ -572,6 +572,14 @@ class TestProgram(unittest.TestCase):
             program, deserialize_pte_binary(flatbuffer_from_py).program
         )
 
+    def test_round_trip_with_shared_non_const_buffers(self) -> None:
+        program = get_test_program()
+        program.execution_plan[0].shared_non_const_buffers = [2]
+        flatbuffer_from_py = bytes(serialize_pte_binary(pte_file=PTEFile(program)))
+        deserialized = deserialize_pte_binary(flatbuffer_from_py).program
+        self.assert_programs_equal(program, deserialized)
+        self.assertEqual(deserialized.execution_plan[0].shared_non_const_buffers, [2])
+
     def test_round_trip_without_non_const_buffer_device(self) -> None:
         """Tests backward compatibility: a program without non_const_buffer_device
         (the default) round-trips correctly and the field remains None.
