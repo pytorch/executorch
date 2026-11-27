@@ -244,7 +244,11 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
       .def(py::init<const py::bytes&, const py::bytes&>())
       .def("Init", &PyQnnManager::Init)
       .def("InitBackend", &PyQnnManager::InitBackend)
-      .def("InitContext", &PyQnnManager::InitContext)
+      .def(
+          "InitContext",
+          &PyQnnManager::InitContext,
+          py::arg("graph_names"),
+          py::arg("partition_index") = 0)
       .def("InitContextCache", &PyQnnManager::InitContextCache)
       .def("IsNodeSupportedByBackend", &PyQnnManager::IsNodeSupportedByBackend)
       .def(
@@ -253,6 +257,7 @@ PYBIND11_MODULE(PyQnnManagerAdaptor, m) {
               const std::vector<std::string>&,
               std::vector<std::vector<std::shared_ptr<OpWrapper>>>&>(
               &PyQnnManager::Compile))
+      .def("CompileDlc", &PyQnnManager::CompileDlc)
       .def("CreateDlc", &PyQnnManager::CreateDlc)
       .def("CompileToDlc", &PyQnnManager::CompileToDlc)
       .def("GetDlcBinary", &PyQnnManager::GetDlcBinary)

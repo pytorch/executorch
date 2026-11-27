@@ -55,6 +55,24 @@ def test_online_prepare(request, kwargs):
 @pytest.mark.parametrize(
     "kwargs",
     [
+        pytest.param({"expected": Tolerance()}, id="e2e"),
+    ],
+)
+def test_dump_qnn_graph(request, kwargs):
+    DumpQnnGraph.test(request, kwargs)  # noqa: F405
+
+
+def test_dump_qnn_graph_multi_partition(compile_specs):
+    DumpQnnGraph.test_multi_partition(compile_specs)  # noqa: F405
+
+
+def test_dump_qnn_graph_multi_method(compile_specs):
+    DumpQnnGraph.test_multi_method(compile_specs)  # noqa: F405
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
         pytest.param({"expected": nullcontext()}, id="e2e"),
     ],
 )
@@ -126,6 +144,10 @@ def test_fcb_dlc_handle_enforces_lifetime_and_owner(fcb_compile_specs):
 
 def test_fcb_dump_context_writes_stripped_dlc(fcb_compile_specs):
     Fcb.dump_context_writes_stripped_dlc(fcb_compile_specs)  # noqa: F405
+
+
+def test_fcb_dump_qnn_graph(fcb_compile_specs):
+    Fcb.dump_qnn_graph_writes_supplementary_dlc(fcb_compile_specs)  # noqa: F405
 
 
 @pytest.mark.parametrize(

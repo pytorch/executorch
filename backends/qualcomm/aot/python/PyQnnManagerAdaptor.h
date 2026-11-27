@@ -267,8 +267,10 @@ class PyQnnManager {
   }
 
   executorch::runtime::Error InitContext(
-      const std::vector<std::string>& graph_names) {
-    return qnn_manager_->InitContext(std::optional{graph_names});
+      const std::vector<std::string>& graph_names,
+      uint32_t partition_index = 0) {
+    return qnn_manager_->InitContext(
+        std::optional{graph_names}, nullptr, std::optional{partition_index});
   }
 
   executorch::runtime::Error InitContextCache() {
@@ -285,7 +287,7 @@ class PyQnnManager {
       std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers) {
     QnnExecuTorchContextBinary binary_info;
 
-    for (uint32_t i = 0; i < graph_names.size(); ++i) {
+    for (size_t i = 0; i < graph_names.size(); ++i) {
       if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) !=
           executorch::runtime::Error::Ok) {
         QNN_EXECUTORCH_LOG_ERROR("Fail to compile QNN graph");
@@ -297,6 +299,26 @@ class PyQnnManager {
     if (qnn_executorch_options->saver() ||
         qnn_manager_->GetContextBinary(binary_info) !=
             executorch::runtime::Error::Ok) {
+      return py::bytes("", 0);
+    }
+
+    return py::bytes(
+        reinterpret_cast<const char*>(binary_info.buffer), binary_info.nbytes);
+  }
+  py::bytes CompileDlc(
+      const std::vector<std::string>& graph_names,
+      std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers) {
+    QnnExecuTorchContextBinary binary_info;
+
+    for (size_t i = 0; i < graph_names.size(); ++i) {
+      if (qnn_manager_->CompileIrGraph(graph_names[i], op_wrappers[i]) !=
+          executorch::runtime::Error::Ok) {
+        QNN_EXECUTORCH_LOG_ERROR("Fail to compile QNN Ir graph");
+        return py::bytes("", 0);
+      }
+    }
+    if (qnn_manager_->GetIrContextBinary(binary_info) !=
+        executorch::runtime::Error::Ok) {
       return py::bytes("", 0);
     }
 
@@ -315,7 +337,7 @@ class PyQnnManager {
       const std::vector<std::string>& graph_names,
       std::vector<std::vector<std::shared_ptr<OpWrapper>>>& op_wrappers,
       PyQnnDlcHandle& dlc_handle) {
-    for (uint32_t i = 0; i < graph_names.size(); ++i) {
+    for (size_t i = 0; i < graph_names.size(); ++i) {
       if (qnn_manager_->Compile(graph_names[i], op_wrappers[i]) != Error::Ok) {
         throw std::runtime_error("Failed to compile QNN graph");
       }

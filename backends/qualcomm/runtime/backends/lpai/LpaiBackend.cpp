@@ -21,7 +21,11 @@ LpaiBackend::LpaiBackend(
     QnnLogger* logger,
     const SocInfo* soc_info,
     const QnnExecuTorchLpaiBackendOptions* lpai_options)
-    : QnnBackend(implementation, logger) {
+    : QnnBackend(implementation, logger),
+      custom_prepare_config_file_(
+          lpai_options->custom_prepare_config_file()
+              ? lpai_options->custom_prepare_config_file()->str()
+              : "") {
   lpai_backend_custom_config_ =
       std::make_unique<LpaiBackendCustomConfig>(soc_info, lpai_options);
 }

@@ -96,6 +96,7 @@ class QnnConfig:
         online_prepare (bool): Compose QNN graph on device if set to True.
         shared_buffer (bool): Enables usage of shared buffer(zero-copy mechanism) between application and backend for graph I/O during runtime.
         dump_intermediate_outputs (bool): Enables dumping model intermediate outputs.
+        dump_qnn_graph_path (str, optional): If specified, additionally export the graph as a DLC file via the Ir backend to this directory, alongside a normal `.pte`. Combinable with FCB.
         profile_level (int): Level of profiling in runtime.
         enable_x86_64: Enable x86_64 simulator execution.
         host (str): Hostname where android device is connected.
@@ -110,6 +111,7 @@ class QnnConfig:
         ci (bool): This flag is for Continuous Integration(CI) purpose and is NOT recommended to turn on for typical use cases. It will use random inputs instead of real inputs.
         seed (int): Set the seed for generating random numbers in both torch and random.
         htp_performance_mode (QnnExecuTorchHtpPerformanceMode, optional): Option to set the performance mode for htp backend.
+        lpai_custom_prepare_config_file (str, optional): Path to a custom prepare config file for the LPAI backend (e.g. a depth-first cut_plan manifest). See generate_lpai_compiler_spec.
     """
 
     soc_model: str
@@ -120,6 +122,7 @@ class QnnConfig:
     online_prepare: Optional[bool] = False
     shared_buffer: Optional[bool] = False
     dump_intermediate_outputs: Optional[bool] = False
+    dump_qnn_graph_path: Optional[str] = None
     profile_level: Optional[int] = 0
     enable_x86_64: Optional[bool] = False
     host: Optional[str] = None
@@ -136,6 +139,7 @@ class QnnConfig:
     htp_performance_mode: QnnExecuTorchHtpPerformanceMode = (
         QnnExecuTorchHtpPerformanceMode.kHtpBurst
     )
+    lpai_custom_prepare_config_file: Optional[str] = None
 
     def __post_init__(self):
         assert self.soc_model, "Please provide the soc_model"
@@ -972,7 +976,9 @@ def build_executorch_binary(
         raise RuntimeError("Currently LPAI backend only supports offline_prepare.")
     backend_options = {
         QnnExecuTorchBackendType.kLpaiBackend: generate_lpai_compiler_spec(
-            target_env=get_lpai_target_env(qnn_config)
+            target_env=get_lpai_target_env(qnn_config),
+            lpai_custom_prepare_config_file=qnn_config.lpai_custom_prepare_config_file
+            or "",
         ),
         QnnExecuTorchBackendType.kGpuBackend: generate_gpu_compiler_spec(),
         QnnExecuTorchBackendType.kHtpBackend: generate_htp_compiler_spec(
@@ -987,6 +993,7 @@ def build_executorch_binary(
         profile_level=qnn_config.profile_level,
         shared_buffer=qnn_config.shared_buffer,
         dump_intermediate_outputs=qnn_config.dump_intermediate_outputs,
+        dump_qnn_graph_path=qnn_config.dump_qnn_graph_path or "",
         op_package_options=op_package_options,
     )
     if quant_dtype is not None or custom_quantizer is not None:
@@ -1253,6 +1260,14 @@ def setup_common_args_and_variables(parser=None):
     )
 
     parser.add_argument(
+        "--dump_qnn_graph_path",
+        help="If specified, additionally export the graph as a DLC file "
+        "via the Ir backend to this directory",
+        type=str,
+        default=None,
+    )
+
+    parser.add_argument(
         "--profile_level",
         type=int,
         help="Profiling level of the delegate and QNN backend. 0=Off, 1=Basic(Currently not supported), 2=Detailed, 3=Optrace.",
@@ -1306,6 +1321,15 @@ def setup_common_args_and_variables(parser=None):
         choices=list(QnnExecuTorchHtpPerformanceMode),
         help="Specify performance mode for htp from 0-8, default to burst(2). For more info, refer to qc_schema.py",
         default=2,
+    )
+
+    parser.add_argument(
+        "--lpai_custom_prepare_config_file",
+        help="Path to a custom prepare config file for the LPAI backend "
+        "(e.g. a depth-first cut_plan manifest). Only applicable with "
+        "--backend lpai.",
+        default=None,
+        type=str,
     )
 
     return parser

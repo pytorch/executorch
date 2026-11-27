@@ -261,7 +261,11 @@ def compile(args):
             if fcb_enabled:
                 raise ValueError("FCB compilation is only supported for HTP")
             backend_options = [
-                generate_lpai_compiler_spec(target_env=QnnExecuTorchLpaiTargetEnv.kArm)
+                generate_lpai_compiler_spec(
+                    target_env=QnnExecuTorchLpaiTargetEnv.kArm,
+                    lpai_custom_prepare_config_file=args.lpai_custom_prepare_config_file
+                    or "",
+                )
             ]
         case _:
             raise ValueError("Backend is not implemented yet")
@@ -270,6 +274,7 @@ def compile(args):
         soc_model=soc_models if fcb_enabled else soc_models[0],
         backend_options=backend_options if fcb_enabled else backend_options[0],
         is_from_context_binary=extension == ".bin",
+        dump_qnn_graph_path=args.dump_qnn_graph_path or "",
     )
     if extension == ".bin":
         custom_op_name = f"ctx_loader_{file_name}"
@@ -630,6 +635,25 @@ def main():
         choices=["htp", "lpai"],
         default="htp",
         help="Backend to be deployed ('htp'/'lpai' are currently supported).",
+    )
+    sub_compile.add_argument(
+        "--dump_qnn_graph_path",
+        type=str,
+        default=None,
+        help=(
+            "If specified, additionally export the graph as a DLC file "
+            "via the Ir backend to this directory."
+        ),
+    )
+    sub_compile.add_argument(
+        "--lpai_custom_prepare_config_file",
+        type=str,
+        default=None,
+        help=(
+            "Path to a custom prepare config file for the LPAI backend "
+            "(e.g. a depth-first cut_plan manifest). Only applicable with "
+            "--backend lpai."
+        ),
     )
     sub_compile.set_defaults(callback=compile)
 

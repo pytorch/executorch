@@ -239,6 +239,7 @@ class QnnExecuTorchLpaiBackendOptions:
     affinity: QnnExecuTorchLpaiCoreAffinity = QnnExecuTorchLpaiCoreAffinity.kSoft
     core_selection: int = 0
     target_env: QnnExecuTorchLpaiTargetEnv = QnnExecuTorchLpaiTargetEnv.kArm
+    custom_prepare_config_file: str = ""
 
 
 @unique
@@ -335,3 +336,4 @@ class QnnExecuTorchOptions:
     )
     use_mha2sha: bool = False
     target_options: Optional[QnnExecuTorchTargetOptions] = None
+    dump_qnn_graph_path: str = ""

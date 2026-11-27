@@ -192,6 +192,42 @@ def validate_context_binary(ctx_bin: bytes):
         )
 
 
+def validate_dlc(dlc_path: str):
+    assert os.path.isfile(dlc_path), f"{dlc_path} does not exist"
+    qnn_sdk = os.environ.get("QNN_SDK_ROOT", None)
+    assert qnn_sdk, "QNN_SDK_ROOT was not found in environment variable"
+
+    target = "x86_64-linux-clang"
+    env = _qnn_subprocess_env(qnn_sdk, target)
+    # qairt-dlc-info is a python script; its qti.aisw.dlc_utils dependency
+    # lives under $QNN_SDK_ROOT/lib/python rather than on the default path.
+    qnn_python_dir = f"{qnn_sdk}/lib/python"
+    existing_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = (
+        f"{qnn_python_dir}:{existing_pythonpath}"
+        if existing_pythonpath
+        else qnn_python_dir
+    )
+
+    cmds = [
+        f"{qnn_sdk}/bin/{target}/qairt-dlc-info",
+        "--input_dlc",
+        dlc_path,
+    ]
+    result = subprocess.run(
+        cmds,
+        capture_output=True,
+        text=True,
+        env=env,
+    )
+    assert result.returncode == 0, (
+        f"qairt-dlc-info failed to read {dlc_path}. "
+        f"returncode={result.returncode}\n"
+        f"stdout:\n{result.stdout}\n"
+        f"stderr:\n{result.stderr}"
+    )
+
+
 class TestQNN(unittest.TestCase):
     rtol: float = 0
     atol: float = 0

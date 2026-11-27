@@ -46,7 +46,11 @@ Error QnnDlcManager::SetUpDlcEnvironment(
   return Error::Ok;
 }
 
-void QnnDlcManager::Destroy() {}
+void QnnDlcManager::Destroy() {
+  // Drop the QnnLogger before QnnManager::Destroy() frees the
+  // QnnImplementation* it borrows, or ~QnnLogger use-after-frees it.
+  backend_bundle_ptr_.reset(new QnnBackendBundle());
+}
 
 } // namespace qnn
 } // namespace backends
