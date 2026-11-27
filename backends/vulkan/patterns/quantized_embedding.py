@@ -21,6 +21,36 @@ from executorch.exir import ExportedProgram
 from executorch.exir.dialects._ops import ops as exir_ops
 
 
+def _replace_anchor_with_embedding(
+    graph_module: torch.fx.GraphModule,
+    match: PatternMatch,
+    embedding_q4gsw_node: torch.fx.Node,
+) -> None:
+    """
+    et_vk.embedding_q4gsw outputs the dtype of its scales. When the replaced
+    op produced another dtype (e.g. fp32 scales feeding an fp16 model), cast
+    back to it explicitly, so that the graph's dtypes survive a retrace.
+    """
+    out_val = match.anchor_node.meta["val"]
+    scales_val = match.scales_node.meta.get("val")
+    emb_dtype = scales_val.dtype if scales_val is not None else out_val.dtype
+    embedding_q4gsw_node.meta["val"] = out_val.to(emb_dtype)
+    result = embedding_q4gsw_node
+    if emb_dtype != out_val.dtype:
+        with graph_module.graph.inserting_after(embedding_q4gsw_node):
+            result = graph_module.graph.create_node(
+                "call_function",
+                exir_ops.edge.dim_order_ops._to_dim_order_copy.default,
+                args=(embedding_q4gsw_node,),
+                kwargs={
+                    "dtype": out_val.dtype,
+                    "dim_order": list(range(out_val.dim())),
+                },
+            )
+        result.meta["val"] = out_val
+    match.anchor_node.replace_all_uses_with(result)
+
+
 embedding_4bit_target = exir_ops.edge.quantized_decomposed.embedding_4bit.dtype
 embedding_target = exir_ops.edge.aten.embedding.default
 torchao_dequantize_affine_target = exir_ops.edge.torchao.dequantize_affine.default
@@ -154,8 +184,7 @@ def replace_quantized_embedding_patterns(
             ),
         )
 
-    embedding_q4gsw_node.meta["val"] = match.anchor_node.meta["val"]
-    match.anchor_node.replace_all_uses_with(embedding_q4gsw_node)
+    _replace_anchor_with_embedding(graph_module, match, embedding_q4gsw_node)
 
 
 class TorchAOQuantizedEmbeddingMatch(PatternMatch):
@@ -338,5 +367,4 @@ def replace_torchao_quantized_embedding_patterns(
             ),
         )
 
-    embedding_q4gsw_node.meta["val"] = match.anchor_node.meta["val"]
-    match.anchor_node.replace_all_uses_with(embedding_q4gsw_node)
+    _replace_anchor_with_embedding(graph_module, match, embedding_q4gsw_node)

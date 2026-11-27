@@ -845,6 +845,51 @@ class TestVulkanPasses(unittest.TestCase):
         self.assertEqual(fused_node.args[2], embed_dim)
         self.assertEqual(tuple(fused_node.args[1].meta["val"].shape), (vocab_size,))
 
+    def test_fuse_quantized_embedding_keeps_output_dtype(self):
+        import executorch.backends.vulkan.custom_ops_lib  # noqa: F401
+
+        vocab_size = 64
+        embed_dim = 128
+
+        class Fp16QuantizedEmbedding(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer(
+                    "weight",
+                    torch.zeros((vocab_size, embed_dim // 2), dtype=torch.uint8),
+                )
+                self.register_buffer(
+                    "scales", torch.ones(vocab_size, dtype=torch.float32)
+                )
+
+            def forward(self, indices):
+                return torch.ops.quantized_decomposed.embedding_4bit.dtype(
+                    self.weight,
+                    self.scales,
+                    None,
+                    -8,
+                    7,
+                    indices,
+                    dtype=torch.float16,
+                )
+
+        sample_inputs = (torch.tensor([[0, 1, 2]], dtype=torch.long),)
+        program = torch.export.export(
+            Fp16QuantizedEmbedding(), sample_inputs, strict=True
+        )
+        edge_program = to_edge(
+            program,
+            compile_config=EdgeCompileConfig(_check_ir_validity=False),
+        )
+        ep = edge_program._edge_programs["forward"]
+        fuse_pass = FusePatternsPass()
+        fuse_pass._exported_program = ep
+
+        fuse_pass.call(ep.graph_module)
+
+        self.assertEqual(op_node_count(ep.graph_module, "embedding_q4gsw.default"), 1)
+        self.assertEqual(ep.module()(*sample_inputs).dtype, torch.float16)
+
     def test_conv1d_as_conv2d_rewrites_eligible_conv(self):
         # Output equality cannot show this: an unrewritten conv1d computes the
         # same numbers. What distinguishes the two is the rank the convolution
