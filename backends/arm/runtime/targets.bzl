@@ -107,6 +107,29 @@ def define_common_targets():
         ],
     )
     runtime.cxx_test(
+        name = "ethosu_backend_init_test",
+        srcs = [
+            "EthosUBackend.cpp",
+            "EthosUBackend_IoMemcpy.cpp",
+            "EthosUIOPlan.cpp",
+            "tests/ethos-u/test_ethosu_backend_init.cpp",
+        ],
+        headers = [
+            "EthosUBackend_Internal.h",
+            "EthosUIOPlan.h",
+        ],
+        compiler_flags = ["-Wno-global-constructors"],
+        preprocessor_flags = _persistent_region_flags(),
+        deps = [
+            ":ethosu_invocation_context",
+            ":vela_bin_stream",
+            "//executorch/runtime/backend:interface",
+            "//executorch/runtime/core:core",
+            "//executorch/runtime/core:named_data_map",
+            "//executorch/runtime/platform:platform",
+        ],
+    )
+    runtime.cxx_test(
         name = "ethosu_io_plan_test",
         srcs = [
             "EthosUBackend_IoMemcpy.cpp",
