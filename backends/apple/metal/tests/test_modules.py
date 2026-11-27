@@ -57,6 +57,10 @@ TESTS_DIR = Path(__file__).parent
 EXECUTORCH_ROOT = TESTS_DIR.parent.parent.parent.parent
 BUILD_DIR = EXECUTORCH_ROOT / "cmake-out"
 EXECUTOR_RUNNER = BUILD_DIR / "executor_runner"
+# Runs two programs in one process (runtime/test/multi_delegate_runner.cpp).
+MULTI_DELEGATE_RUNNER = (
+    BUILD_DIR / "backends" / "apple" / "metal" / "metal_multi_delegate_runner"
+)
 RUN_METAL_TEST_SCRIPT = TESTS_DIR / "run_metal_test.sh"
 
 # Test output directory - use current working directory in CI for reliable write access
@@ -300,6 +304,124 @@ MODULE_REGISTRY["linear_bias_batch1"] = {
         "addmm here (the MobileNet classifier case), exercising "
         "aoti_torch_mps_addmm_out"
     ),
+}
+
+
+# -------------------------------------------------------------------------
+# Views with a storage offset. The chunks below are views into the first
+# linear's output; the second chunk starts partway into that buffer. The cat
+# variants also write through such views.
+# -------------------------------------------------------------------------
+class LinearChunkLastDim(nn.Module):
+    """Chunking the last dim gives a non-packed view (its row stride is still
+    the parent's), which reinterpret_tensor has to materialize."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(8, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=-1)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_last_dim"] = {
+    "model_class": LinearChunkLastDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second last-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkFirstDim(nn.Module):
+    """Chunking the first dim gives a packed view that only differs from its
+    parent by the storage offset."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        return self.linear2(second)
+
+
+MODULE_REGISTRY["linear_chunk_first_dim"] = {
+    "model_class": LinearChunkFirstDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on the second first-dim chunk of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkCatLastDim(nn.Module):
+    """Inductor builds the cat result by writing through views of it, then the
+    second linear reads the whole buffer."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(24, 5, bias=False)
+
+    def forward(self, x):
+        first, second = self.linear1(x).chunk(2, dim=-1)
+        return self.linear2(
+            torch.cat([first, second, torch.relu(second) * 2.0], dim=-1)
+        )
+
+
+MODULE_REGISTRY["linear_chunk_cat_last_dim"] = {
+    "model_class": LinearChunkCatLastDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a last-dim cat assembled from chunks of another linear's output",
+    # The slices of a last-dim cat are non-packed views, which
+    # aoti_torch__reinterpret_tensor materializes into a copy. Writes through
+    # them land in the copy and never reach the cat buffer.
+    "skip": "Writes through a non-packed view are lost (view is materialized)",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearChunkCatFirstDim(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        first, second = self.linear1(x).chunk(2, dim=0)
+        return self.linear2(torch.cat([first, second, torch.relu(second) * 2.0], dim=0))
+
+
+MODULE_REGISTRY["linear_chunk_cat_first_dim"] = {
+    "model_class": LinearChunkCatFirstDim,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a first-dim cat assembled from chunks of another linear's output",
+}
+
+
+# -------------------------------------------------------------------------
+class LinearNestedChunk(nn.Module):
+    """A view of a view: the last quarter of the first linear's output, taken
+    as the second chunk of its second chunk."""
+
+    def __init__(self):
+        super().__init__()
+        self.linear1 = nn.Linear(7, 16, bias=False)
+        self.linear2 = nn.Linear(16, 5, bias=False)
+
+    def forward(self, x):
+        _, second = self.linear1(x).chunk(2, dim=0)
+        _, last = second.chunk(2, dim=0)
+        return self.linear2(last)
+
+
+MODULE_REGISTRY["linear_nested_chunk"] = {
+    "model_class": LinearNestedChunk,
+    "input_shapes": [(12, 7)],
+    "description": "Linear on a chunk of a chunk of another linear's output",
 }
 
 
@@ -1603,6 +1725,64 @@ class TestMetalBackendModules(unittest.TestCase):
         model, example_inputs = get_model_and_inputs("add", dtype=torch.float32)
         program = export_model_to_metal(model, example_inputs)
         self.assertGreater(len(program.buffer), 0)
+
+    @unittest.skipIf(SKIP_RUNTIME_TESTS, SKIP_RUNTIME_REASON)
+    @unittest.skipIf(
+        not MULTI_DELEGATE_RUNNER.exists(),
+        "metal_multi_delegate_runner not built - run "
+        "'backends/apple/metal/tests/run_metal_test.sh --build'",
+    )
+    def test_destroying_one_program_keeps_the_others_memory(self):
+        """Two programs share the process: destroying the first must leave the
+        second's constants and handles alone, so its next run is still right."""
+        dtype = torch.float32
+        with tempfile.TemporaryDirectory() as tmpdir:
+            test_dir = Path(tmpdir)
+            pte_paths = []
+            for model_name in ("conv2d_bias", "linear_bias"):
+                model, example_inputs = get_model_and_inputs(model_name, dtype=dtype)
+                model_dir = test_dir / model_name
+                model_dir.mkdir()
+                pte_path, expected_output = export_model_to_pte(
+                    model,
+                    example_inputs,
+                    model_dir,
+                    model_name,
+                    model_config=MODULE_REGISTRY[model_name],
+                )
+                pte_paths.append(pte_path)
+
+            output_base_path = test_dir / "output"
+            result = subprocess.run(
+                [
+                    str(MULTI_DELEGATE_RUNNER),
+                    *map(str, pte_paths),
+                    str(output_base_path),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=60,
+                cwd=str(EXECUTORCH_ROOT),
+            )
+            self.assertEqual(
+                result.returncode,
+                0,
+                f"metal_multi_delegate_runner failed\n{result.stdout}\n{result.stderr}",
+            )
+
+            atol, rtol = get_tolerances_for_model("linear_bias", dtype)
+            is_close, max_atol, max_rtol = compare_outputs(
+                expected_output,
+                test_dir / "output-0.bin",
+                dtype,
+                atol=atol,
+                rtol=rtol,
+            )
+            self.assertTrue(
+                is_close,
+                f"linear_bias after destroying conv2d_bias: output mismatch - "
+                f"max_atol={max_atol}, max_rtol={max_rtol}",
+            )
 
 
 # =============================================================================

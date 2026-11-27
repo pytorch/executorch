@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 EXECUTORCH_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
 BUILD_DIR="$EXECUTORCH_ROOT/cmake-out"
 EXECUTOR_RUNNER="$BUILD_DIR/executor_runner"
+MULTI_DELEGATE_RUNNER="$BUILD_DIR/backends/apple/metal/metal_multi_delegate_runner"
 
 # Function to check if Metal runtime is built
 check_build() {
@@ -79,14 +80,17 @@ build_runtime() {
 
     echo "Building..."
     cmake --build . -j$(sysctl -n hw.ncpu)
+    cmake --build . -j$(sysctl -n hw.ncpu) --target metal_multi_delegate_runner
 
     cd "$EXECUTORCH_ROOT"
 
     # Patch absolute libomp install name from some torch nightlies to rpath-based
     # lookup so the runner works on macOS images without /opt/llvm-openmp.
-    if [[ -f "$EXECUTOR_RUNNER" ]] && otool -L "$EXECUTOR_RUNNER" | grep -q "/opt/llvm-openmp/lib/libomp.dylib"; then
-        install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$EXECUTOR_RUNNER"
-    fi
+    for binary in "$EXECUTOR_RUNNER" "$MULTI_DELEGATE_RUNNER"; do
+        if [[ -f "$binary" ]] && otool -L "$binary" | grep -q "/opt/llvm-openmp/lib/libomp.dylib"; then
+            install_name_tool -change /opt/llvm-openmp/lib/libomp.dylib @rpath/libomp.dylib "$binary"
+        fi
+    done
 
     if [[ -f "$EXECUTOR_RUNNER" ]]; then
         echo "Build successful: $EXECUTOR_RUNNER"
