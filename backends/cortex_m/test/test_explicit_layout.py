@@ -95,14 +95,25 @@ def test_aot_layout_mode_selects_operator_family(explicit_layout, expected, unex
     assert _count(program, unexpected) == 0
 
 
-def test_aot_explicit_layout_requires_quantization():
-    with pytest.raises(RuntimeError, match="requires --quantize"):
-        _compile(
-            Conv2d().eval(),
-            (torch.randn(1, 3, 8, 8),),
-            explicit_layout=True,
-            quantize=False,
-        )
+@pytest.mark.parametrize("run_on_fvp", [False, True], ids=["host", "fvp"])
+def test_aot_explicit_layout_without_quantization(run_on_fvp):
+    module = Conv2d().eval()
+    inputs = (torch.randn(1, 3, 8, 8),)
+    model_quant, edge, runtime_inputs = _compile(
+        module, inputs, explicit_layout=True, quantize=False
+    )
+    program = edge.exported_program()
+
+    assert model_quant is None
+    assert _count(program, exir_ops.edge.aten.convolution.default) == 1
+    torch.testing.assert_close(program.module()(*runtime_inputs), module(*inputs))
+    executable = edge.to_executorch()
+    assert executable.buffer
+    if run_on_fvp:
+        serialized = CortexMSerialize(CortexMTargetConfig(cpu=CortexM.M55))
+        serialized.run(executable)
+        [actual] = serialized.run_artifact(runtime_inputs)
+        torch.testing.assert_close(actual, module(*inputs))
 
 
 def _assert_explicit_copy_ceiling(module, inputs, ceiling):
