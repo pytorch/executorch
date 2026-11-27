@@ -91,11 +91,6 @@ class EnnBackend(BackendDetails):
         enn_wrapper = PyEnnWrapper.EnnWrapper()
         enn_wrapper.Init()
 
-        first_programs_len = len(next(iter(edge_programs.values())))
-        assert all(
-            len(programs) == first_programs_len for programs in edge_programs.values()
-        ), "All subgraphs must have the same number of partitions!"
-
         preprocess_results = {}
         # Store GEN compile specs to set weight_buffer_hash_id_spec.value in USE phase
         gen_compile_specs = []
@@ -166,6 +161,12 @@ class EnnBackend(BackendDetails):
                     )
                 )
             preprocess_results[method_name] = preprocess_results_for_method
+
+        # Methods may differ in partition count (e.g. encoders vs. decoder
+        # methods), but every weight-sharing GEN partition needs a USE one.
+        assert (
+            not gen_compile_specs
+        ), "WEIGHT_SHARING_GEN partitions are left without a WEIGHT_SHARING_USE partition!"
 
         # Set the same data_store_output for all PreprocessResults
         for method_name in preprocess_results:

@@ -176,10 +176,42 @@ class InsertQDQPass(ExportPass):
                 continue
             self._add_q_after(graph_module, node)
 
+    def _add_dq_for_bool_cast(self, graph_module: GraphModule):
+        # A bool cast (e.g. a visibility/attention mask) must read the float
+        # value of its producer, not the raw integer codes left there by
+        # FoldQDQPass: a zero-valued element quantized with a non-zero
+        # zero_point would become True after the int-to-bool cast. Re-insert
+        # the DQ on this edge when the producer's output is quantized.
+        for node in list(graph_module.graph.nodes):
+            if node.target != exir_ops.edge.aten._to_copy.default:
+                continue
+            val = node.meta.get("val")
+            if not isinstance(val, torch.Tensor) or val.dtype != torch.bool:
+                continue
+            producer = node.args[0]
+            quant_attrs = producer.meta.get("quantize_attrs")
+            # Skip float producers: the float32 none-marker attrs (set on DQ
+            # nodes and popped graph inputs) are excluded by the integral
+            # dtype check. A Q node inserted by _add_q_after carries real
+            # attrs in its meta, so the quantized-input case is covered too.
+            quant_dtype = (quant_attrs or {}).get(QuantConstants.QUANT_KEY.quant_dtype)
+            if (
+                not isinstance(quant_dtype, torch.dtype)
+                or quant_dtype.is_floating_point
+            ):
+                continue
+            dq_node = self._add_dq_before(graph_module, node, producer, quant_attrs)
+            dq_val = dq_node.meta.get("val")
+            if isinstance(dq_val, torch.Tensor) and not dq_val.dtype.is_floating_point:
+                # DQ output is float; the producer's meta val may carry the
+                # quantized (integer) dtype when it is a Q node.
+                dq_node.meta["val"] = dq_val.to(torch.float32)
+
     def call(self, graph_module: GraphModule):
         self._add_qdq(graph_module)
         self._add_qdq_for_requantize(graph_module)
         self._add_q_for_cast(graph_module)
+        self._add_dq_for_bool_cast(graph_module)
         graph_module.graph.eliminate_dead_code()
         graph_module.recompile()
         return PassResult(graph_module, True)

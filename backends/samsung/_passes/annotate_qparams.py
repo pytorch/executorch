@@ -14,7 +14,10 @@ from executorch.exir.pass_base import ExportPass, PassResult
 from torch._export.utils import get_buffer
 from torch.export import ExportedProgram
 from torch.fx import GraphModule, Node
-from torch.fx.passes.utils.source_matcher_utils import get_source_partitions
+from torch.fx.passes.utils.source_matcher_utils import (
+    get_source_partitions,
+    SourcePartition,
+)
 
 
 class AnnotateQparamsPass(ExportPass):
@@ -297,6 +300,57 @@ class AnnotateQparamsPass(ExportPass):
             if in_quantize_attrs:
                 node.meta["in_quantize_attrs"] = in_quantize_attrs
 
+    def split_bmm_partitions(self, partitions_dict):
+        """
+        If the matmul partition contains multiple matmul, split it into separate partitions.
+        """
+        if "matmul" not in partitions_dict:
+            return partitions_dict
+
+        original_partitions = partitions_dict["matmul"]
+        new_partitions = []
+
+        for partition in original_partitions:
+            bmm_nodes = [
+                n for n in partition.nodes if n.target == exir_ops.edge.aten.bmm.default
+            ]
+
+            if len(bmm_nodes) <= 1:
+                new_partitions.append(partition)
+                continue
+
+            for bmm_node in bmm_nodes:
+                sub_nodes = set()
+                queue = [bmm_node]
+
+                while queue:
+                    curr = queue.pop(0)
+                    if curr in partition.nodes and curr not in sub_nodes:
+                        sub_nodes.add(curr)
+                        queue.extend(curr.all_input_nodes)
+                        queue.extend(curr.users.keys())
+
+                sub_inputs = [
+                    n
+                    for n in partition.input_nodes
+                    if any(user in sub_nodes for user in n.users)
+                ]
+                sub_outputs = [n for n in partition.output_nodes if n in sub_nodes]
+                if not sub_outputs:
+                    continue
+
+                new_part = SourcePartition(
+                    nodes=list(sub_nodes),
+                    source=partition.source,
+                    input_nodes=sub_inputs,
+                    output_nodes=sub_outputs,
+                    params=partition.params,
+                )
+                new_partitions.append(new_part)
+
+        partitions_dict["matmul"] = new_partitions
+        return partitions_dict
+
     def _annotate_decomposed_mm(self, graph_module: GraphModule):
         partitions = get_source_partitions(
             graph_module.graph,
@@ -308,6 +362,8 @@ class AnnotateQparamsPass(ExportPass):
                 torch.bmm,
             ],
         )
+
+        partitions = self.split_bmm_partitions(partitions)
 
         for _, src_partitions in partitions.items():
             for src_partition in src_partitions:
