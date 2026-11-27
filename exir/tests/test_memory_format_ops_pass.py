@@ -13,7 +13,12 @@ from unittest.mock import patch
 import torch
 
 import torchvision
-from executorch.exir import EdgeCompileConfig, to_edge, to_edge_transform_and_lower
+from executorch.exir import (
+    EdgeCompileConfig,
+    ExirExportedProgram,
+    to_edge,
+    to_edge_transform_and_lower,
+)
 from executorch.exir.backend.partitioner import Partitioner, PartitionResult
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.dialects.edge._ops import EdgeOpOverload
@@ -24,6 +29,7 @@ from executorch.exir.dim_order_utils import (
     is_contiguous_dim_order,
 )
 from executorch.exir.pass_base import ExportPass, ProxyValue
+from executorch.exir.passes import NonzeroDimOrderPass
 
 from executorch.exir.tests.test_memory_format_ops_pass_utils import (
     AmbiguousDimOrderError,
@@ -473,6 +479,224 @@ class TestMemoryFormatOpsPass(unittest.TestCase):
             AssertionError("Should have raised AmbiguousDimOrderError")
         except AmbiguousDimOrderError:
             pass  # Expected error
+
+    def test_nonzero_result_copied_into_default_dim_order(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                return x[indices[:, 0], indices[:, 1]], indices.float() / 2
+
+        model = Model()
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        edge = to_edge(export(model, (x,), strict=True))
+        (copy,) = [
+            node
+            for node in edge.exported_program().graph.nodes
+            if node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+        ]
+        self.assertEqual(copy.args[0].target, exir_ops.edge.aten.nonzero.default)
+        # Only nonzero binds the size that depends on the data. A delegate that
+        # takes the copy without nonzero fails to lower otherwise.
+        self.assertNotIn("unbacked_bindings", copy.meta)
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        for sample in (x, torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]])):
+            outputs = module.run_method("forward", (sample,))
+            for output, expected in zip(outputs, model(sample), strict=True):
+                torch.testing.assert_close(output, expected)
+
+    def test_legacy_to_edge_copies_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                return torch.nonzero(x)
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        edge = ExirExportedProgram(export(Model(), (x,), strict=True), False).to_edge()
+        (copy,) = [
+            node
+            for node in edge.exported_program.graph.nodes
+            if node.target == exir_ops.edge.dim_order_ops._clone_dim_order.default
+        ]
+        self.assertEqual(copy.args[0].target, exir_ops.edge.aten.nonzero.default)
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        # A caller that reads the data row by row gets the right indices.
+        self.assertTrue(output.is_contiguous())
+        torch.testing.assert_close(output, torch.nonzero(x))
+
+    def test_nonzero_result_copied_without_dim_order_ops(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                return indices, x[indices[:, 0], indices[:, 1]]
+
+        model = Model()
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        edge = to_edge(
+            export(model, (x,), strict=True),
+            compile_config=EdgeCompileConfig(_skip_dim_order=True),
+        )
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        outputs = module.run_method("forward", (x,))
+        # A caller that reads the data row by row gets the right indices.
+        self.assertTrue(outputs[0].is_contiguous())
+        for output, expected in zip(outputs, model(x), strict=True):
+            torch.testing.assert_close(output, expected)
+
+    def test_nonzero_writes_default_dim_order_without_copy(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                return indices, indices + 1
+
+        model = Model()
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        program = to_edge(export(model, (x,), strict=True)).to_executorch()
+        exported_program = program.exported_program()
+        nonzero, add = [
+            node
+            for node in exported_program.graph.nodes
+            if isinstance(node.target, torch._ops.OpOverload)
+        ]
+        self.assertEqual(nonzero.target, torch.ops.aten.nonzero.out)
+        self.assertEqual(add.target, torch.ops.aten.add.out)
+        self.assertEqual(list(nonzero.meta["spec"].dim_order), [0, 1])
+        names = {node.name for node in exported_program.graph.nodes}
+        for spec in exported_program.graph_signature.output_specs:
+            self.assertIn(spec.arg.name, names)
+        module = _load_for_executorch_from_buffer(program.buffer)
+        outputs = module.run_method("forward", (x,))
+        for output, expected in zip(outputs, model(x), strict=True):
+            torch.testing.assert_close(output, expected)
+
+    def test_nonzero_dim_order_pass_skips_graph_without_nonzero(self) -> None:
+        graph_module = (
+            to_edge(export(torch.nn.ReLU(), (torch.randn(2, 3),), strict=True))
+            .exported_program()
+            .graph_module
+        )
+        result = NonzeroDimOrderPass()(graph_module)
+        self.assertFalse(result.modified)
+        self.assertIs(result.graph_module, graph_module)
+
+    def test_as_strided_reads_nonzero_result_itself(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 3)
+                return torch.as_strided(indices, (2, 2), (1, 3)), indices + 1
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        edge = to_edge(export(Model(), (x,), strict=True))
+        (as_strided,) = [
+            node
+            for node in edge.exported_program().graph.nodes
+            if node.target == exir_ops.edge.aten.as_strided_copy.default
+        ]
+        self.assertEqual(as_strided.args[0].target, exir_ops.edge.aten.nonzero.default)
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        outputs = module.run_method("forward", (x,))
+        for output, expected in zip(outputs, Model()(x), strict=True):
+            torch.testing.assert_close(output, expected)
+
+    def test_as_strided_of_value_computed_from_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self, compute) -> None:
+                super().__init__()
+                self.compute = compute
+
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 3)
+                return torch.as_strided(self.compute(indices), (2, 2), (1, 3))
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        # Eager reads these values column by column, the program would not.
+        for name, compute in (
+            ("float", lambda i: i.float()),
+            ("chained", lambda i: i.float() * 2),
+            ("multi_output", lambda i: torch.sort(i.float(), dim=0).values),
+        ):
+            with self.subTest(name), self.assertRaisesRegex(
+                RuntimeError, "as_strided reads a value"
+            ):
+                to_edge(export(Model(compute), (x,), strict=True))
+        model = Model(lambda i: i.float().contiguous())
+        edge = to_edge(export(model, (x,), strict=True))
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        torch.testing.assert_close(output, model(x))
+
+    def test_as_strided_of_view_of_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def __init__(self, compute) -> None:
+                super().__init__()
+                self.compute = compute
+
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 3)
+                return torch.as_strided(self.compute(indices), (2,), (1,))
+
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        # Eager reads a view through the storage of the result, column by
+        # column, the program would read a new contiguous tensor.
+        for name, compute in (
+            ("rows", lambda i: i[1:]),
+            ("row", lambda i: i[0]),
+            ("computed_from_view", lambda i: i[1:] + 0),
+            ("split_piece", lambda i: i.split(1)[0]),
+        ):
+            with self.subTest(name), self.assertRaisesRegex(
+                RuntimeError, "as_strided reads a value"
+            ):
+                to_edge(export(Model(compute), (x,), strict=True))
+        # A value with one dim of more than one element has one layout, and
+        # .contiguous() gives the same layout in eager and in the program.
+        for name, compute in (
+            ("sum", lambda i: i[1:].sum(dim=1)),
+            ("contiguous", lambda i: i[1:].contiguous()),
+        ):
+            with self.subTest(name):
+                model = Model(compute)
+                edge = to_edge(export(model, (x,), strict=True))
+                module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+                (output,) = module.run_method("forward", (x,))
+                torch.testing.assert_close(output, model(x))
+
+    def test_as_strided_of_value_computed_from_nonzero_result_of_1d_input(
+        self,
+    ) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] == 2)
+                return torch.as_strided(indices.float(), (2,), (1,))
+
+        # The result has shape (N, 1), so both layouts store the same bytes.
+        x = torch.tensor([0.0, 1.0, 2.0, 0.0])
+        model = Model()
+        edge = to_edge(export(model, (x,), strict=True))
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        torch.testing.assert_close(output, model(x))
+
+    def test_as_strided_of_reduction_of_nonzero_result(self) -> None:
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                torch._check(indices.shape[0] >= 2)
+                values = torch.max(indices.float(), dim=1).values
+                return torch.as_strided(values, (2,), (1,))
+
+        # max returns a tuple, and its 1-D values have the same layout as in
+        # eager, so as_strided of them exports. The size of the result is not
+        # known at export.
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        model = Model()
+        edge = to_edge(export(model, (x,), strict=True))
+        module = _load_for_executorch_from_buffer(edge.to_executorch().buffer)
+        (output,) = module.run_method("forward", (x,))
+        torch.testing.assert_close(output, model(x))
 
     # Only test dim order replacement result in lean mode test.
     # This test is irrelevant with operator mode.

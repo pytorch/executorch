@@ -15,6 +15,7 @@ from executorch.exir import (
     ExecutorchBackendConfig,
     to_edge_transform_and_lower,
 )
+from executorch.exir._serialize._program import deserialize_pte_binary
 from executorch.exir.backend.compile_spec_schema import CompileSpec
 from executorch.exir.backend.partitioner import (
     DelegationSpec,
@@ -56,7 +57,7 @@ class EachAddOnCuda(Partitioner):
         )
 
 
-def load(model, inputs, directory, config=None):
+def load(model, inputs, directory, config=None, skip_dim_order=True):
     """Lower model with EachAddOnCuda and load its forward method from a file
     in directory."""
     from executorch.runtime import Runtime
@@ -65,7 +66,7 @@ def load(model, inputs, directory, config=None):
         torch.export.export(model, inputs, strict=True),
         partitioner=[EachAddOnCuda()],
         compile_config=EdgeCompileConfig(
-            _check_ir_validity=False, _skip_dim_order=True
+            _check_ir_validity=False, _skip_dim_order=skip_dim_order
         ),
     )
     path = Path(directory) / "model.pte"
@@ -179,3 +180,31 @@ class CudaDevicePlacementTest(unittest.TestCase):
             for scale in (1.0, 10.0):
                 (output,) = method.execute([(x * scale).cuda()])
                 torch.testing.assert_close(output.cpu(), model(x * scale))
+
+    def test_nonzero_result_read_by_delegates(self):
+        """The nonzero result is copied into the default dim order before
+        partitioning. So a CUDA add that reads it, and one that reads an op on
+        it, are compiled for the layout they read, and a portable select reads
+        the copy. Both adds must be delegated, or the portable add would hide
+        a layout the delegate reads wrong."""
+
+        class Model(torch.nn.Module):
+            def forward(self, x):
+                indices = torch.nonzero(x)
+                return torch.add(indices, 1), torch.add(indices * 2, 1), indices[:, 0]
+
+        model = Model()
+        x = torch.tensor([[0.0, 1.0, 2.0], [3.0, 0.0, 0.0]])
+        with tempfile.TemporaryDirectory() as directory:
+            method = load(model, (x,), directory, skip_dim_order=False)
+            program = deserialize_pte_binary(
+                (Path(directory) / "model.pte").read_bytes()
+            ).program
+            self.assertEqual(
+                [delegate.id for delegate in program.execution_plan[0].delegates],
+                [CudaBackend.__name__] * 2,
+            )
+            for sample in (x, torch.tensor([[1.0, 0.0, 1.0], [0.0, 1.0, 1.0]])):
+                outputs = method.execute([sample])
+                for output, expected in zip(outputs, model(sample), strict=True):
+                    torch.testing.assert_close(output.cpu(), expected)

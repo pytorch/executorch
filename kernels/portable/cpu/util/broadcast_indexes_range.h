@@ -117,7 +117,7 @@ class BroadcastIndexesIterator {
         "BroadcastIndexesIterator constructor requires kNumInputs input tensor"
         "arguments!");
     std::array<Tensor::StridesType, executorch::runtime::kTensorDimensionLimit>
-        output_strides;
+        output_strides{};
     Tensor::StridesType stride = 1;
     for (auto ii = static_cast<ssize_t>(output_sizes.size()) - 1; ii >= 0;
          --ii) {

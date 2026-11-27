@@ -44,8 +44,10 @@ from executorch.exir.passes import (
     convert_constant_dim_order_pass,
     dead_code_elimination_pass,
     EdgeToBackendOpsPass,
+    FoldNonzeroCopyPass,
     LegalizePortableDimOrderPass,
     MemoryFormatOpsPass,
+    NonzeroDimOrderPass,
     OpReplacePass,
     remove_unused_parameters_pass,
     ReplaceEmptyLikePass,
@@ -698,6 +700,9 @@ def _to_edge(ep, config: EdgeCompileConfig) -> "ExirExportedProgram":
     new_gm_res = OpReplacePass()(new_gm)
     assert new_gm_res is not None
     new_gm = new_gm_res.graph_module
+    new_gm_res = NonzeroDimOrderPass(config._skip_dim_order)(new_gm)
+    assert new_gm_res is not None
+    new_gm = new_gm_res.graph_module
     if not config._skip_dim_order:
         new_gm_res = MemoryFormatOpsPass()(new_gm)
         assert new_gm_res is not None
@@ -790,6 +795,7 @@ def edge_to_executorch_passes(
         # there exists an unbacked symint operation.
         *config.passes,
         SpecPropPass(),
+        FoldNonzeroCopyPass(),
         PropagateDevicePass(
             skip_h2d_for_method_inputs=device_cfg.skip_h2d_for_method_inputs,
             skip_d2h_for_method_outputs=device_cfg.skip_d2h_for_method_outputs,
@@ -851,6 +857,7 @@ def _generate_edge_program(
     ):
         passes.append(ReplaceEmptyLikePass())
     passes.append(OpReplacePass())
+    passes.append(NonzeroDimOrderPass(config._skip_dim_order))
     if not config._skip_dim_order:
         passes.append(MemoryFormatOpsPass())
 

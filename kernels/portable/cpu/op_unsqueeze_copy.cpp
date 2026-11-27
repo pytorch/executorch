@@ -8,7 +8,6 @@
 
 #include <c10/util/irange.h>
 #include <cstdint>
-#include <cstring>
 
 #include <executorch/kernels/portable/cpu/util/copy_ops_util.h>
 #include <executorch/runtime/kernel/kernel_includes.h>
@@ -18,6 +17,7 @@ namespace executor {
 namespace native {
 
 using Tensor = executorch::aten::Tensor;
+using executorch::ET_RUNTIME_NAMESPACE::copy_to_default_dim_order;
 
 // unsqueeze_copy.out(Tensor self, int dim, *, Tensor(a!) out) -> Tensor(a!)
 // -> Tensor(a!)
@@ -57,15 +57,14 @@ Tensor& unsqueeze_copy_out(
       InvalidArgument,
       out);
 
+  ET_KERNEL_CHECK(ctx, tensor_is_default_dim_order(out), InvalidArgument, out);
+
   ET_KERNEL_CHECK(
       ctx, check_unsqueeze_copy_args(self, dim, out), InvalidArgument, out);
 
-  if (self.nbytes() > 0) {
-    // Note that this check is important. It's valid for a tensor with numel 0
-    // to have a null data pointer, but in some environments it's invalid to
-    // pass a null pointer to memcpy() even when the size is zero.
-    memcpy(out.mutable_data_ptr(), self.const_data_ptr(), self.nbytes());
-  }
+  // self can be in another dim order, like the result of nonzero, while out
+  // is contiguous, as PyTorch's unsqueeze_copy returns it.
+  copy_to_default_dim_order(self, out.mutable_data_ptr());
   return out;
 }
 
