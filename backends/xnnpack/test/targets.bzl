@@ -45,6 +45,8 @@ def define_common_targets():
             "//executorch/backends/xnnpack:xnnpack_backend",
             "//executorch/runtime/executor:pte_data_map",
             "//executorch/extension/data_loader:file_data_loader",
+            "//executorch/extension/flat_tensor/serialize:flat_tensor_header",
+            "//executorch/extension/flat_tensor/serialize:generated_headers",
             "//executorch/extension/testing_util:temp_file",
             "//executorch/schema:program",
         ],

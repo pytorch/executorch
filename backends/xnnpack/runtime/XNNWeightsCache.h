@@ -15,10 +15,14 @@
 #include <executorch/runtime/core/memory_allocator.h>
 #include <executorch/runtime/core/result.h>
 #include <executorch/runtime/executor/pte_data_map.h>
+#ifndef _WIN32
+#include <sys/types.h>
+#endif
 #include <array>
 #include <atomic>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -244,6 +248,39 @@ class XNNWeightsCache {
   // seed, causing a stampede of re-packs. Reject v1 outright.
   static constexpr uint32_t kCacheVersion = 2;
   bool load_packed_cache();
+  /**
+   * Whether fd's file may be written as a packed weight cache: not an
+   * ExecuTorch program or data file, and readable. A refusal is logged and
+   * recorded as OpenFailed, and an ExecuTorch file also sets
+   * cache_file_protected_.
+   */
+  bool may_write_cache_file(int fd);
+  /**
+   * Opens the cache file for writing and locks it. Returns -1, with the
+   * failure recorded, if the path is protected, the file can't be opened, or
+   * check_content is set and may_write_cache_file refuses it. Every write fd
+   * for the cache file comes from here. Only the fresh write, which is about
+   * to truncate the file, checks its content; the reopens go through
+   * reopen_cache_for_write instead.
+   */
+  int open_cache_for_write(int flags, bool check_content);
+  struct CacheFooter {
+    uint64_t index_start;
+    uint32_t entry_count;
+  };
+  /**
+   * Reads and checks the 20-byte footer at the end of fd's file of file_size
+   * bytes: magic, version and index start. Doesn't check the index entries.
+   */
+  std::optional<CacheFooter> read_cache_footer(int fd, size_t file_size) const;
+  /** Whether fd's file ends with this format's cache footer. */
+  bool has_cache_trailer(int fd) const;
+  /**
+   * Reopens the cache file for writing for an init that already holds its
+   * entries. Returns -1, with the failure recorded, if it can't be opened or
+   * doesn't end with a cache trailer. Never sets cache_file_protected_.
+   */
+  int reopen_cache_for_write();
   void reset_for_fresh_write();
   void release_entry(void* packed_data_ptr);
   void full_unload();
@@ -277,6 +314,18 @@ class XNNWeightsCache {
   //
   std::string packed_cache_path_;
   int packed_file_fd_{-1};
+  // Set once a check finds an ExecuTorch program or data file at
+  // packed_cache_path_, and cleared only by set_packed_cache_path. While the
+  // path is unchanged, later inits keep packing in memory instead of reopening
+  // the file for writing, even when entries packed to heap are still in
+  // memory (the manager hands one instance to every delegate on a path).
+  bool cache_file_protected_{false};
+  // Set when an init accepts the file at packed_cache_path_: load_packed_cache
+  // validated its trailer and index, or the fresh write checked and truncated
+  // it. Cleared only by set_packed_cache_path. With entries in memory, an init
+  // only reopens the path while this is set (the entries' offsets belong to
+  // that file), and then only if the file still ends with a cache trailer.
+  bool cache_file_accepted_{false};
   size_t packed_file_used_{0};
   // Tracks file offset of each file-backed allocation. Used by
   // save_packed_index() to serialize (name → offset, size) index.
@@ -351,6 +400,21 @@ class XNNWeightsCache {
 
   static enum xnn_status delete_cache(XNNWeightsCache* context);
 };
+
+#ifndef _WIN32
+namespace internal {
+// pread's signature. A parameter so tests can simulate short reads.
+using ReadAtFn = ssize_t (*)(int fd, void* buf, size_t n, off_t offset);
+
+/**
+ * Reads n bytes at offset through read_at, repeating after a short read and
+ * retrying EINTR. Returns the number of bytes read, which is less than n only
+ * at end of file, or -1 with errno set on any other error. Exposed for tests.
+ */
+ssize_t
+read_fully_at(int fd, void* buf, size_t n, off_t offset, ReadAtFn read_at);
+} // namespace internal
+#endif
 
 } // namespace delegate
 } // namespace xnnpack

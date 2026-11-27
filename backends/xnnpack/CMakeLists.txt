@@ -165,7 +165,7 @@ add_library(
 target_link_libraries(
   xnnpack_backend
   PUBLIC ${xnnpack_third_party} xnnpack_schema extension_threadpool
-  PRIVATE xnnpack_profiler
+  PRIVATE xnnpack_profiler program_schema
 )
 if(EXECUTORCH_BUILD_SHARED)
   set_target_properties(
