@@ -13,6 +13,9 @@ model:
   use_attention_sink: "4,124"
 
 export:
+  # At most window_size + 1, so one prefill call never overwrites tokens that
+  # are still in the window.
+  max_seq_length: 125
   # max_context_length controls the RoPE frequency table size.
   # It must be >= sink_size + window_size (128), but larger values are
   # recommended to support generation beyond the sliding window.

@@ -68,7 +68,7 @@ We only require manually specifying a checkpoint path for the Llama model family
 For the other supported LLMs, the checkpoint will be downloaded from Hugging Face automatically, and the param files can be found in their respective directories under `executorch/examples/models`, for instance `executorch/examples/models/qwen3/config/0_6b_config.json`.
 
 ## Export settings
-[ExportConfig](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py) contains settings for the exported `.pte`, such as `max_seq_length` (max length of the prompt) and `max_context_length` (max length of the model's memory/cache).
+[ExportConfig](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py) contains settings for the exported `.pte`, such as `max_seq_length` (for KV-cache models, the most tokens the model takes in one call; the runner prefills longer prompts in chunks, up to `max_context_length`) and `max_context_length` (max length of the model's memory/cache).
 
 ## Adding optimizations
 `export_llm` performs a variety of optimizations to the model before export, during export, and during lowering. Quantization and delegation to accelerator backends are the main ones and will be covered in the next two sections. All other optimizations can be found under [`ModelConfig`](https://github.com/pytorch/executorch/blob/main/extension/llm/export/config/llm_config.py#L120). We will go ahead and add a few optimizations.

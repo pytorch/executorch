@@ -5,6 +5,7 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import copy
 import os
 import tempfile
 import unittest
@@ -40,6 +41,8 @@ from executorch.examples.models.llama.export_llama_lib import (
     get_quantizer_and_quant_params,
     TORCHTUNE_DEFINED_MODELS,
 )
+from executorch.examples.models.llama.llama_transformer import construct_transformer
+from executorch.examples.models.llama.model_args import ModelArgs
 from executorch.examples.models.llama.source_transformation.custom_kv_cache import (
     StaticQuantizedKVCache,
 )
@@ -895,3 +898,69 @@ class ExportLlamaLibTest(unittest.TestCase):
 
         self.assertEqual(len(quantizers), 1)
         self.assertIsInstance(quantizers[0], VgfQuantizer)
+
+
+class KVCacheTokenDimTest(unittest.TestCase):
+    def _builder(self, max_seq_len, **kwargs):
+        args = ModelArgs(
+            dim=32,
+            n_heads=2,
+            hidden_dim=64,
+            n_layers=2,
+            vocab_size=32,
+            max_batch_size=1,
+            max_seq_len=max_seq_len,
+            max_context_len=32,
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+            **kwargs,
+        )
+        torch.manual_seed(0)
+        return LLMEdgeManager(
+            model=construct_transformer(args).eval(),
+            modelname="tiny",
+            max_seq_len=max_seq_len,
+            use_kv_cache=True,
+            enable_dynamic_shape=True,
+            example_inputs=(
+                torch.tensor([[2, 3, 4]]),
+                {"input_pos": torch.tensor([0])},
+            ),
+        )
+
+    def test_export_takes_get_max_seq_len_tokens(self):
+        builder = self._builder(max_seq_len=8)
+        eager = copy.deepcopy(builder.model)
+        exported = builder.export().pre_autograd_graph_module
+        tokens = torch.randint(0, 32, (1, builder.metadata["get_max_seq_len"]))
+        input_pos = {"input_pos": torch.tensor([0])}
+        with torch.no_grad():
+            torch.testing.assert_close(
+                exported(tokens, input_pos), eager(tokens, input_pos)
+            )
+
+    def test_sliding_window_limits_tokens_per_call(self):
+        sliding = {
+            "sliding_window": 4,
+            "layer_types": ["sliding_attention"] * 2,
+            # An overwrite only hurts the first tokens of a chunk, so compare all.
+            "generate_full_logits": True,
+        }
+        with self.assertRaisesRegex(ValueError, "sliding window"):
+            self._builder(max_seq_len=6, **sliding).export()
+
+        builder = self._builder(max_seq_len=5, **sliding)
+        eager = copy.deepcopy(builder.model)
+        exported = builder.export().pre_autograd_graph_module
+        tokens = torch.randint(0, 32, (1, 10))
+        with torch.no_grad():
+            exported(tokens[:, :5], {"input_pos": torch.tensor([0])})
+            chunked = exported(tokens[:, 5:], {"input_pos": torch.tensor([5])})
+            one_at_a_time = torch.cat(
+                [
+                    eager(tokens[:, pos : pos + 1], {"input_pos": torch.tensor([pos])})
+                    for pos in range(10)
+                ],
+                dim=1,
+            )
+        torch.testing.assert_close(chunked, one_at_a_time[:, 5:])
