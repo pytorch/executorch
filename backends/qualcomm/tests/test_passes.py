@@ -2960,5 +2960,111 @@ class TestIoBindingCheck(unittest.TestCase):
         self.assertIn("2 graph outputs", str(ctx.exception))
 
 
+class TestInt32BiasRange(unittest.TestCase):
+    """A bias at the int32 bias bound keeps its sign: the bound is exact in float32."""
+
+    BIAS = 8250.0  # above eps * 2**31 for every config, so MinMax maps it to the bound
+    CASES = (
+        (QuantDtype.use_8a8w, False, "layer_norm"),
+        (QuantDtype.use_8a8w, True, "layer_norm"),
+        (QuantDtype.use_8a4w, False, "layer_norm"),
+        (QuantDtype.use_16a2w, False, "layer_norm"),
+        (QuantDtype.use_16a4w, False, "layer_norm"),
+        (QuantDtype.use_16a4w, True, "layer_norm"),
+        (QuantDtype.use_16a8w, False, "layer_norm"),
+        (QuantDtype.use_16a8w, True, "layer_norm"),
+        (QuantDtype.use_16a16w, False, "layer_norm"),
+        # LayerNorm annotation does not support fp16a8w; a per-tensor Linear covers it.
+        (QuantDtype.use_fp16a8w, False, "linear"),
+        (QuantDtype.use_fp16a8w, True, "linear"),
+    )
+
+    def _quantize(self, module, x, quantizer, is_qat=False):
+        from torchao.quantization.pt2e.quantize_pt2e import (
+            convert_pt2e,
+            prepare_pt2e,
+            prepare_qat_pt2e,
+        )
+
+        prepare = prepare_qat_pt2e if is_qat else prepare_pt2e
+        prepared = prepare(torch.export.export(module, (x,)).module(), quantizer)
+        prepared(x)
+        with torch.no_grad():
+            converted = convert_pt2e(prepared)
+            out = converted(x)
+        dequantize = (
+            torch.ops.quantized_decomposed.dequantize_per_tensor.default,
+            torch.ops.quantized_decomposed.dequantize_per_channel.default,
+        )
+        # int32 dequantize nodes with a negative quant_min are the biases; 16-bit
+        # activations are stored as int32 too, but with quant_min 0.
+        bias_bounds = {
+            (n.args[-3], n.args[-2])
+            for n in converted.graph.nodes
+            if n.target in dequantize and n.args[-1] == torch.int32 and n.args[-3] < 0
+        }
+        return out, bias_bounds
+
+    def _assert_exact_in_float32(self, bias_bounds):
+        self.assertTrue(bias_bounds)
+        for low, high in bias_bounds:
+            for bound in (low, high):
+                self.assertEqual(int(torch.tensor(bound, dtype=torch.float32)), bound)
+
+    def test_bias_at_the_bound_keeps_its_sign(self):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+
+        for quant_dtype, is_qat, op in self.CASES:
+            with self.subTest(quant_dtype=quant_dtype, is_qat=is_qat, op=op):
+                torch.manual_seed(0)
+                module = (
+                    torch.nn.LayerNorm(8)
+                    if op == "layer_norm"
+                    else torch.nn.Linear(8, 8)
+                )
+                with torch.no_grad():
+                    module.bias.zero_()
+                    module.bias[2] = self.BIAS
+                x = torch.randn(4, 8)
+                quantizer = make_quantizer(quant_dtype=quant_dtype, is_qat=is_qat)
+                out, bias_bounds = self._quantize(module, x, quantizer, is_qat)
+                self._assert_exact_in_float32(bias_bounds)
+                # The flip itself needs an x86-64 host; arm64 saturates the cast.
+                self.assertAlmostEqual(float(out[:, 2].mean()), self.BIAS, delta=100.0)
+
+    def test_saturated_derived_bias_keeps_its_sign(self):
+        from executorch.backends.qualcomm.export_utils import make_quantizer
+
+        # Activation scale times weight scale is small, so these biases saturate.
+        torch.manual_seed(0)
+        linear = torch.nn.Linear(16, 2)
+        conv = torch.nn.Conv2d(128, 2, 1)
+        for module in (linear, conv):
+            with torch.no_grad():
+                module.weight *= 1e-3
+                module.bias.copy_(torch.tensor([30.0, -30.0]))
+        per_block = QnnQuantizer(soc_model=QcomChipset.SM8750)
+        per_block.set_default_quant_config(
+            QuantDtype.use_16a4w_block, is_conv_per_channel=True
+        )
+        per_block.set_block_size_map({"conv2d": (1, 64, 1, 1)})
+        cases = {
+            "per_channel": (
+                linear,
+                torch.randn(2, 16),
+                make_quantizer(
+                    quant_dtype=QuantDtype.use_16a8w, per_channel_linear=True
+                ),
+            ),
+            "per_block": (conv, torch.randn(1, 128, 4, 4), per_block),
+        }
+        for spec, (module, x, quantizer) in cases.items():
+            with self.subTest(spec=spec):
+                out, bias_bounds = self._quantize(module, x, quantizer)
+                self._assert_exact_in_float32(bias_bounds)
+                self.assertGreater(float(out[:, 0].mean()), 0.0)
+                self.assertLess(float(out[:, 1].mean()), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()
