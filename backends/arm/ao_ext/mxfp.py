@@ -10,6 +10,12 @@ import torch
 from executorch.exir._warnings import experimental
 from torchao.core.config import AOBaseConfig
 from torchao.prototype.mx_formats.config import ScaleCalculationMode
+from torchao.prototype.mx_formats.kernels import (
+    f32_to_f4_unpacked,
+    f32_to_f6_e2m3_unpacked,
+    f32_to_f6_e3m2_unpacked,
+    pack_uint4,
+)
 from torchao.prototype.mx_formats.mx_tensor import (
     DTYPE_FP6_E2M3,
     DTYPE_FP6_E3M2,
@@ -70,12 +76,95 @@ def _match_supported_modules(module: torch.nn.Module, _name: str) -> bool:
     return isinstance(module, (torch.nn.Linear, torch.nn.Conv2d))
 
 
+# Upper rounding boundaries used by TOSA 1.1 calc_block_scale. The E4M3
+# boundary is inclusive; the other formats round away from their finite maximum.
+_ROUNDING_LIMITS: dict[MXFPDType, float] = {
+    torch.float4_e2m1fn_x2: 7.0,
+    DTYPE_FP6_E2M3: 7.75,
+    DTYPE_FP6_E3M2: 30.0,
+    torch.float8_e4m3fn: 464.0,
+    torch.float8_e5m2: 61440.0,
+}
+
+
+def _choose_tosa_scale(
+    input: torch.Tensor, output_dtype: MXFPDType, block_size: int
+) -> torch.Tensor:
+    """Choose E8M0 block scales using TOSA 1.1 reference scaling.
+
+    Args:
+        input (torch.Tensor): FP32 or BF16 values blocked along the final axis.
+        output_dtype (MXFPDType): MXFP payload format.
+        block_size (int): Number of elements per block, currently 32.
+
+    Returns:
+        torch.Tensor: One E8M0 scale per block, with the final axis divided
+            by the block size.
+
+    """
+    if output_dtype not in _ROUNDING_LIMITS or block_size != 32:
+        raise ValueError(
+            "TOSA-reference scaling requires an MXFP format and block size 32"
+        )
+    if input.dtype not in (torch.float32, torch.bfloat16):
+        raise ValueError("TOSA-reference scaling requires FP32 or BF16 input")
+    if input.ndim == 0 or input.shape[-1] == 0 or input.shape[-1] % block_size:
+        raise ValueError("TOSA-reference scaling requires block-aligned input")
+    shape = (*input.shape[:-1], input.shape[-1] // block_size)
+    maximum = input.double().reshape(*shape, block_size).abs().amax(dim=-1)
+    valid = torch.isfinite(maximum) & (maximum != 0)
+    safe_maximum = torch.where(valid, maximum, torch.ones_like(maximum))
+    logarithm = torch.log2(safe_maximum / _ROUNDING_LIMITS[output_dtype])
+    exponent = (
+        logarithm.ceil()
+        if output_dtype == torch.float8_e4m3fn
+        else logarithm.floor() + 1
+    )
+    encoded = (exponent.clamp(-127, 127) + 127).to(torch.uint8)
+    encoded = torch.where(maximum == 0, torch.zeros_like(encoded), encoded)
+    encoded = torch.where(torch.isfinite(maximum), encoded, 255)
+    return encoded.contiguous().view(torch.float8_e8m0fnu)
+
+
+def _quantize_tosa_reference(
+    input: torch.Tensor, output_dtype: MXFPDType, block_size: int
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """Convert floating-point values to MXFP payloads and E8M0 scales.
+
+    Args:
+        input (torch.Tensor): FP32 or BF16 values blocked along the final axis.
+        output_dtype (MXFPDType): MXFP payload format.
+        block_size (int): Number of elements per block, currently 32.
+
+    Returns:
+        tuple[torch.Tensor, torch.Tensor]: Payload storage and E8M0 scales.
+
+    """
+    scale = _choose_tosa_scale(input, output_dtype, block_size)
+    blocks = input.double().reshape(*scale.shape, block_size)
+    scaled = (
+        (blocks / scale.double().unsqueeze(-1))
+        .float()
+        .reshape(input.shape)
+        .contiguous()
+    )
+    if output_dtype == torch.float4_e2m1fn_x2:
+        payload = pack_uint4(f32_to_f4_unpacked(scaled))
+    elif output_dtype == DTYPE_FP6_E2M3:
+        payload = f32_to_f6_e2m3_unpacked(scaled)
+    elif output_dtype == DTYPE_FP6_E3M2:
+        payload = f32_to_f6_e3m2_unpacked(scaled)
+    else:
+        payload = scaled.to(output_dtype)
+    return payload, scale
+
+
 def _cast_to_block_scaled_cpu_ref(
     input: torch.Tensor,
     output_dtype: MXFPDType,
     block_size: int,
 ) -> torch.Tensor:
-    """Emulate the current TOSA activation cast in eager mode."""
+    """Emulate legacy TOSA activation conversion using TorchAO RCEIL."""
     input_scale, input_qdata = to_mx(
         input.to(torch.float32).contiguous(),
         elem_dtype=output_dtype,
