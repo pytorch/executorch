@@ -10,6 +10,9 @@ from math import frexp, isfinite
 import torch
 
 
+SOFTMAX_MAX_WIDTH = 255
+
+
 def quantize_multiplier(real_multiplier: float) -> tuple[int, int]:
     if not isfinite(real_multiplier) or real_multiplier <= 0.0:
         raise ValueError(

@@ -4,7 +4,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+from dataclasses import replace
+
 import torch
+from executorch.backends.espressif.utils.quantization import SOFTMAX_MAX_WIDTH
 from executorch.backends.transforms.permute_pass_utils import get_arg, set_arg
 from executorch.backends.xnnpack.quantizer.xnnpack_quantizer import (
     get_symmetric_quantization_config,
@@ -17,6 +20,7 @@ from executorch.frontends.fused_quant.quantizer.quantizer import (
 )
 from torchao.quantization.pt2e.quantizer import (
     DerivedQuantizationSpec,
+    FixedQParamsQuantizationSpec,
     SharedQuantizationSpec,
 )
 from torchao.quantization.pt2e.quantizer.quantizer import Q_ANNOTATION_KEY
@@ -103,6 +107,20 @@ class _AvgPoolQuantizer(OpQuantizer):
         annotate_output_qspec(node, SharedQuantizationSpec((node.args[0], node)))
 
 
+def _use_fixed_softmax_qparams(node: torch.fx.Node) -> bool:
+    # Softmax preserves shape; output metadata survives the inserted Q/DQ nodes.
+    value = node.meta.get("val")
+    return (
+        isinstance(value, torch.Tensor)
+        and value.dim() > 0
+        and all(type(dim) is int and dim > 0 for dim in value.shape)
+        and value.numel() <= torch.iinfo(torch.int32).max
+        and value.shape[-1] <= SOFTMAX_MAX_WIDTH
+        and get_arg(node, "dim") in (-1, value.dim() - 1)
+        and not get_arg(node, "half_to_float")
+    )
+
+
 class _EspFusedQuantizer(FusedQuantQuantizer):
     """Fused Quant quantizer for the Espressif operator-library backend.
 
@@ -113,8 +131,25 @@ class _EspFusedQuantizer(FusedQuantQuantizer):
     def __init__(self) -> None:
         config = get_symmetric_quantization_config(is_per_channel=False)
         weighted_config = get_symmetric_quantization_config(is_per_channel=True)
+        softmax_config = replace(
+            config,
+            output_activation=FixedQParamsQuantizationSpec(
+                dtype=torch.int8,
+                scale=1 / 256,
+                zero_point=-128,
+                quant_min=-128,
+                quant_max=127,
+                qscheme=torch.per_tensor_affine,
+            ),
+        )
         super().__init__(
             [
+                OpQuantizer(
+                    torch.ops.aten._softmax.default,
+                    torch.ops.fused_quant._softmax.default,
+                    softmax_config,
+                    node_filter=_use_fixed_softmax_qparams,
+                ),
                 OpQuantizer(
                     torch.ops.aten.hardswish.default,
                     torch.ops.fused_quant.hardswish.default,
