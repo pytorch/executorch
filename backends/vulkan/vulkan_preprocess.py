@@ -195,9 +195,9 @@ class VulkanBackend(BackendDetails):
         program = apply_passes(
             program,
             [
-                AddmmToLinearTransform(),
+                AddmmToLinearTransform(program),
                 FuseBatchNormPass(program),
-                AddmmToLinearTransform(),
+                AddmmToLinearTransform(program),
                 InsertDtypePromotionPass(),
                 FusePatternsPass(compile_options.get("skip_fusion_patterns", ())),
                 Conv1dAsConv2dPass(),
