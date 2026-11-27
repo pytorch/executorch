@@ -1127,14 +1127,27 @@ class MLXProgramBuilder:
         num_non_temp_tensors = sum(num_tensors.values()) - num_tensors[IdSpace.Temp]
         return [tensor_meta.get(i) for i in range(num_non_temp_tensors)]
 
-    @staticmethod
-    def _min_runtime_version(mutated_inputs: List[int]) -> int:
+    def _min_runtime_version(self, mutated_inputs: List[int]) -> int:
         """The oldest MLX runtime that can run this program correctly.
 
         The runtime rejects a program whose version exceeds the one it
         supports, so a program only requires a newer runtime when it uses a
         feature an older one would silently ignore.
         """
+        # Version 3: descending SortNode/ArgsortNode. Older runtimes ignore the
+        # field and silently return ascending order.
+        from executorch.backends.mlx.serialization.mlx_graph_schema import (
+            ArgsortNode,
+            SortNode,
+        )
+
+        for chain in self._chains:
+            for instr in chain:
+                if (
+                    isinstance(instr.op, (SortNode, ArgsortNode))
+                    and instr.op.descending
+                ):
+                    return 3
         # Version 2: a runtime that predates mutated_inputs would skip the
         # write-back into those inputs.
         if mutated_inputs:
