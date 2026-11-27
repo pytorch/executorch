@@ -342,9 +342,16 @@ GlobalWorkGrid reduce_per_row_gwg(
   (void)shader;
   (void)resize_args;
 
+  // One workgroup per output row along y. Rows past the device's y limit
+  // spill into z; the shader recombines them as z * gl_NumWorkGroups.y + y.
   const ValueRef out = args.at(0).refs.at(0);
+  const uint32_t rows =
+      std::max(utils::safe_downcast<uint32_t>(graph->numel_of(out)), 1u);
+  const uint32_t max_y =
+      graph->context()->adapter_ptr()->max_compute_workgroup_count()[1u];
+  const uint32_t y = std::min(rows, max_y);
   return GlobalWorkGrid(
-      {1u, utils::safe_downcast<uint32_t>(graph->numel_of(out)), 1u},
+      {1u, y, utils::div_up(rows, y)},
       kTiledWorkGrid,
       LocalWorkGroup(64u, 1u, 1u));
 }

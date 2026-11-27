@@ -59,7 +59,12 @@ $if OUTPUT_IS_INDICES:
   #define OUTPUT_IS_INDICES
 
 void main() {
-  const uint out_idx = gl_GlobalInvocationID.y;
+  // Rows beyond the device's y workgroup limit are spilled into z.
+  const uint out_idx =
+      gl_GlobalInvocationID.z * gl_NumWorkGroups.y + gl_GlobalInvocationID.y;
+  if (out_idx >= numel(outp)) {
+    return;
+  }
   const TensorIndex out_tidx = contiguous_idx_to_tensor_idx(outp, out_idx);
   const uint out_bufi = tensor_idx_to_linear_idx(outp, out_tidx);
 
