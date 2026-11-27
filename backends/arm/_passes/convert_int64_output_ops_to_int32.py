@@ -71,7 +71,8 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
             ``"warn"`` logs a warning and skips the cast for that node.
             ``"skip"`` silently skips the cast for that node.
         tosa_spec (TosaSpecification | None): Enable target-aware TopK
-            boundary preparation when provided. Requires
+            boundary preparation and scalar index remainder when the
+            target supports native integer division. Requires
             ``convert_cast_ops=False`` to preserve int64 restoration casts.
             Defaults to None, retaining generic range conversion only.
 
@@ -476,7 +477,14 @@ class ConvertInt64OutputOpsToInt32Pass(ArmPass):
         self._converted_casts = 0
         self._safe_index_casts = 0
         graph = graph_module.graph
-        analysis = Int32RangeAnalysis(graph_module)
+        analysis = Int32RangeAnalysis(
+            graph_module,
+            allow_scalar_remainder=(
+                self.tosa_spec is not None
+                and self.tosa_spec.support_integer()
+                and not self.tosa_spec.is_U55_subset
+            ),
+        )
         target_ops = self._target_ops()
         for node in list(graph.nodes):
             if node.op != "call_function":

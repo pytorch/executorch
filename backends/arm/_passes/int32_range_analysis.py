@@ -32,6 +32,9 @@ class Int32RangeAnalysis:
 
     Args:
         graph_module (torch.fx.GraphModule): Graph module to analyze.
+        allow_scalar_remainder (bool): Enable positive scalar remainder
+            for nonnegative bounded indices on targets with native
+            integer division.
 
     """
 
@@ -94,8 +97,14 @@ class Int32RangeAnalysis:
         + edge_index_remainder_ops
     )
 
-    def __init__(self, graph_module: torch.fx.GraphModule) -> None:
+    def __init__(
+        self,
+        graph_module: torch.fx.GraphModule,
+        *,
+        allow_scalar_remainder: bool = False,
+    ) -> None:
         self.graph_module = graph_module
+        self.allow_scalar_remainder = allow_scalar_remainder
 
     @staticmethod
     def _index_range_from_size(size: Any) -> Optional[ValueRange]:
@@ -277,12 +286,19 @@ class Int32RangeAnalysis:
             return lhs[0] - rhs[1], lhs[1] - rhs[0]
         return None
 
-    def _infer_binary_range(
+    def _infer_binary_range(  # noqa: C901
         self,
         node: torch.fx.Node,
         ranges: Dict[torch.fx.Node, ValueRange],
     ) -> Optional[ValueRange]:
-        if node.target not in self.aten_index_binary_ops + self.edge_index_binary_ops:
+        scalar_remainder = node.target in (
+            torch.ops.aten.remainder.Scalar,
+            exir_ops.edge.aten.remainder.Scalar,
+        )
+        if scalar_remainder:
+            if not self.allow_scalar_remainder:
+                return None
+        elif node.target not in self.aten_index_binary_ops + self.edge_index_binary_ops:
             return None
         if get_first_fake_tensor(node).dtype != torch.int64 or len(node.args) < 2:
             return None
@@ -292,6 +308,18 @@ class Int32RangeAnalysis:
             return None
         if not self._range_fits_int32(lhs) or not self._range_fits_int32(rhs):
             return None
+
+        if scalar_remainder:
+            # For nonnegative x and positive y, both floor(x / y)
+            # and floor(x / y) * y fit whenever x fits in int32.
+            if (
+                node.args[0] not in ranges
+                or not isinstance(node.args[1], int)
+                or not 0 <= lhs[0] <= lhs[1]
+                or rhs[0] <= 0
+            ):
+                return None
+            return 0, min(lhs[1], rhs[0] - 1)
 
         result: Optional[ValueRange]
         if node.target in self.aten_index_mul_ops + self.edge_index_mul_ops:
