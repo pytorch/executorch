@@ -1089,6 +1089,10 @@ OffGraphKVMetrics CudaExecutor::kv_metrics() const {
   return kv_->metrics();
 }
 
+CudaGraphMetrics CudaExecutor::graph_metrics(std::string_view method) const {
+  return kv_->graph_metrics(method);
+}
+
 std::vector<ForwardMethodCalls> CudaExecutor::method_calls() const {
   std::vector<ForwardMethodCalls> calls;
   calls.reserve(methods_.size() + 1);

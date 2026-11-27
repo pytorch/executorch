@@ -11,8 +11,10 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <unordered_set>
+#include <utility>
 #include <vector>
 
 #include <executorch/backends/aoti/slim/c10/core/ScalarType.h>
@@ -57,7 +59,9 @@ class CudaKVPool final {
       std::vector<Layer> layers,
       std::vector<SideBuffer> side_buffers,
       ::executorch::backends::aoti::slim::c10::ScalarType storage_dtype,
-      int64_t initial_rows);
+      int64_t initial_rows,
+      int declared_columns = 1,
+      int initial_columns = 1);
 
   CudaKVPool(const CudaKVPool&) = delete;
   CudaKVPool& operator=(const CudaKVPool&) = delete;
@@ -78,13 +82,32 @@ class CudaKVPool final {
 
   // Orders `stream` after the previous step, then makes the growable layers
   // hold at least `required_rows`, carrying their first `live_rows` rows
-  // across a growth. The first call also allocates the fixed storage.
-  runtime::Error
-  prepare(int64_t required_rows, int64_t live_rows, cudaStream_t stream);
+  // across a growth. The first call also allocates the fixed storage. If
+  // 0 < min_columns < columns() and that allocation runs out of memory, it
+  // uses the widest physical width down to min_columns that fits; row counts
+  // are flattened at the width before the call.
+  runtime::Error prepare(
+      int64_t required_rows,
+      int64_t live_rows,
+      cudaStream_t stream,
+      int min_columns = 0);
+
+  // Flattened row counts remain multiples of the current physical width.
+  // Copies the old owner columns in place; the scratch column is not retained.
+  // live_rows is the logical prefix, capped by each ring. Growth commits only
+  // after all copies pass; smaller widths are rejected. If `columns` runs out
+  // of memory, growth uses the widest width down to min_columns (0 = columns)
+  // that fits; columns() reports the result. Before allocation only the width
+  // is recorded, at `columns`.
+  runtime::Error resize_columns(
+      int columns,
+      int64_t live_rows,
+      cudaStream_t stream,
+      int min_columns = 0);
 
   // Records where the step's work ends on its stream, for the next step to
   // follow if it runs on another.
-  runtime::Error mark_step_done();
+  runtime::Error mark_step_done(cudaStream_t stream);
 
   // Orders `stream` behind the previous step's stream, so work issued on
   // another host thread (where cudaStreamPerThread names another stream) still
@@ -93,6 +116,8 @@ class CudaKVPool final {
 
   // Host fence on the pool's device before cells can be reclaimed or reset.
   runtime::Error synchronize(bool all_streams = false);
+
+  CudaGraphMetrics graph_metrics(std::string_view method) const;
 
   // Points `handle`'s constants at the current storage. Cached until storage
   // moves. Precondition: allocated().
@@ -127,6 +152,12 @@ class CudaKVPool final {
   int64_t growth_count() const {
     return growth_count_;
   }
+  int columns() const {
+    return columns_;
+  }
+  int64_t column_resize_count() const {
+    return column_resize_count_;
+  }
 
  private:
   struct Allocation {
@@ -150,6 +181,8 @@ class CudaKVPool final {
   };
 
   size_t row_bytes(const Layer& layer) const;
+  int64_t physical_limit(const Layer& layer) const;
+  void invalidate_bindings();
   static std::vector<int64_t> layer_sizes(const Layer& layer);
   runtime::Error allocate_layer(
       const Layer& layer,
@@ -158,7 +191,8 @@ class CudaKVPool final {
       Allocation& out);
   void release(void* ptr, cudaStream_t stream);
   void discard(const Layer& layer, Allocation& allocation, cudaStream_t stream);
-  runtime::Error allocate_initial(int64_t required_rows, cudaStream_t stream);
+  runtime::Error
+  allocate_initial(int64_t required_rows, int min_columns, cudaStream_t stream);
   runtime::Error allocate_side_buffers(cudaStream_t stream);
   runtime::Error grow(int64_t new_rows, int64_t live_rows, cudaStream_t stream);
   runtime::Error build_descriptors(CudaDelegateHandle* handle);
@@ -174,6 +208,9 @@ class CudaKVPool final {
   ::executorch::backends::aoti::slim::c10::ScalarType storage_dtype_;
   int64_t initial_rows_;
   int64_t max_rows_{0};
+  const int declared_columns_;
+  int columns_;
+  int64_t column_resize_count_{0};
 
   int device_{0};
   bool device_known_{false};

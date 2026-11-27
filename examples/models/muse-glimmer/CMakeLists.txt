@@ -144,6 +144,37 @@ target_include_directories(
   dflash_timing_test PUBLIC ${_common_include_directories}
 )
 
+option(MUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE "Build CUDA KV correctness probe"
+       OFF
+)
+if(MUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE)
+  if(WIN32)
+    message(FATAL_ERROR "Runtime KV probe requires POSIX file descriptors")
+  endif()
+  if(NOT EXECUTORCH_BUILD_CUDA)
+    message(FATAL_ERROR "Runtime KV probe requires the CUDA batching executor")
+  endif()
+  if(NOT TARGET cuda_batching)
+    message(FATAL_ERROR "Runtime KV probe requires the cuda_batching target")
+  endif()
+  add_executable(
+    muse_glimmer_runtime_kv_probe tests/runtime_kv_columns_probe.cpp
+  )
+  target_include_directories(
+    muse_glimmer_runtime_kv_probe PRIVATE ${_common_include_directories}
+                                          ${_json_include}
+  )
+  target_link_libraries(
+    muse_glimmer_runtime_kv_probe PRIVATE cuda_batching CUDA::cudart
+                                          ${link_libraries}
+  )
+  if(NOT APPLE AND NOT MSVC)
+    target_link_options(
+      muse_glimmer_runtime_kv_probe PRIVATE "LINKER:--export-dynamic"
+    )
+  endif()
+endif()
+
 # Worker used by the OpenAI-compatible serving harness.
 add_executable(
   muse_glimmer_worker

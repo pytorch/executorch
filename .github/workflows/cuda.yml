@@ -697,11 +697,15 @@ jobs:
         # CudaExecutor; MG preparation tests also run on Linux.
         make muse-glimmer-batching-cuda
         BATCHING_BIN_DIR="${PWD}/cmake-out/examples/models/muse-glimmer-batching"
-        cmake -S "${PWD}/examples/models/muse-glimmer" -B "${BATCHING_BIN_DIR}" \
-          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON
+        cmake -S "${PWD}/examples/models/muse-glimmer" \
+          -B "${BATCHING_BIN_DIR}" -DMUSE_GLIMMER_BUILD_BATCHING=ON \
+          -DMUSE_GLIMMER_BUILD_BATCHING_TESTS=ON \
+          -DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON
         bash .ci/scripts/build_muse_glimmer_batching_smoke.sh "${BATCHING_BIN_DIR}"
         cmake --build "${BATCHING_BIN_DIR}" \
-          --target muse_glimmer_batching_test muse_glimmer_cuda_dflash_test --parallel
+          --target muse_glimmer_batching_runner muse_glimmer_batching_worker \
+          muse_glimmer_batching_test muse_glimmer_cuda_dflash_test \
+          muse_glimmer_runtime_kv_probe --parallel
         ctest --test-dir "${BATCHING_BIN_DIR}" \
           -R '^muse_glimmer_batching$' --output-on-failure --no-tests=error
         test -x "${BATCHING_BIN_DIR}/muse_glimmer_batching_runner"
@@ -710,6 +714,10 @@ jobs:
 
         # The batching export on a tiny model, and the CLI's backend dispatch.
         pip install gguf
+        python examples/models/muse-glimmer/tests/check_runtime_kv_columns.py \
+          --probe "${BATCHING_BIN_DIR}/muse_glimmer_runtime_kv_probe" \
+          --output-dir "${RUNNER_TEMP:-/tmp}/muse_glimmer_runtime_kv_columns"
+
         python -m pytest -v -o "addopts=" \
           examples/models/muse-glimmer/tests/test_cuda_batching_pipeline.py \
           examples/models/muse-glimmer/tests/test_cuda_dflash_packed.py \
@@ -820,7 +828,12 @@ jobs:
         ctest --test-dir cmake-out -R test_cuda_backend_execute --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_sort_rand --output-on-failure -V
         ctest --test-dir cmake-out -R test_cuda_current_stream --output-on-failure -V
-        ctest --test-dir cmake-out -R test_cuda_kv_cache --output-on-failure -V
+        ctest --test-dir cmake-out -R '^test_cuda_kv_cache$' --output-on-failure --no-tests=error -V > /tmp/test_cuda_kv_cache.log 2>&1 || { cat /tmp/test_cuda_kv_cache.log; exit 1; }
+        cat /tmp/test_cuda_kv_cache.log
+        if grep -q "SKIPPED" /tmp/test_cuda_kv_cache.log; then
+          echo "::error::test_cuda_kv_cache skipped"
+          exit 1
+        fi
         ctest --test-dir cmake-out -R test_step_plan --output-on-failure -V
         # CudaExecutor end to end on a toy decoder, against its eager greedy
         # output. The test skips without the model, so fail if it skipped.

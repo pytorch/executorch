@@ -15,7 +15,7 @@ sequence's query rows attend only that sequence's column, bounded by its own
 length, so a step costs the sum of the contexts rather than a sweep of every
 sequence's cells.
 
-The runtime describes the step in ``seq_info`` (``Int32[S, 4]``), one row per
+The runtime describes the step in ``seq_info`` (``Int32[S, 5]``), one row per
 segment of consecutive query rows of one sequence:
 
 * ``q_start``, ``q_len``: the segment's rows on the packed query axis
@@ -23,6 +23,9 @@ segment of consecutive query rows of one sequence:
 * ``col``: the sequence's storage column;
 * ``kv_end``: one past the logical position of the segment's last row, i.e. the
   sequence's length once this step's writes land.
+
+The last field is the physical column count, read from row 0. It sets the K/V
+row pitch even when the compiled tensor declares a larger maximum width.
 
 Rows are the segment's newest positions: row ``r`` sits at
 ``kv_end - q_len + r``. Active segments must be disjoint and in bounds;
@@ -38,6 +41,8 @@ from torch.library import triton_op, wrap_triton
 _SPLITK_MAX_QUERY = 4
 _SPLITK_ROWS_PER_SPLIT = 256
 _SPLITK_MAX_SPLITS = 16
+# Rows per K/V tile of the decode kernel; its in-tile offsets are int32.
+_DECODE_BLOCK_N = 128
 
 
 @triton.jit
@@ -54,10 +59,8 @@ def _sdpa_varlen_kernel(  # noqa: C901
     T,
     stride_qh,
     stride_qt,
-    stride_kr,
     stride_kc,
     stride_kh,
-    stride_vr,
     stride_vc,
     stride_vh,
     stride_oh,
@@ -83,10 +86,13 @@ def _sdpa_varlen_kernel(  # noqa: C901
     seg = pid0 // num_qb
     qb = pid0 % num_qb
 
-    q_start = tl.load(Info_ptr + seg * 4 + 0)
-    q_len = tl.load(Info_ptr + seg * 4 + 1)
-    col = tl.load(Info_ptr + seg * 4 + 2)
-    kv_end = tl.load(Info_ptr + seg * 4 + 3)
+    q_start = tl.load(Info_ptr + seg * 5 + 0)
+    q_len = tl.load(Info_ptr + seg * 5 + 1)
+    col = tl.load(Info_ptr + seg * 5 + 2)
+    kv_end = tl.load(Info_ptr + seg * 5 + 3)
+    columns = tl.load(Info_ptr + 4).to(tl.int64)
+    stride_kr = columns * stride_kc
+    stride_vr = columns * stride_vc
     if qb * BLOCK_M >= q_len * NUM_GROUPS:
         return
 
@@ -206,10 +212,8 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
     T,
     stride_qh,
     stride_qt,
-    stride_kr,
     stride_kc,
     stride_kh,
-    stride_vr,
     stride_vc,
     stride_vh,
     stride_oh,
@@ -233,20 +237,28 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
     h_kv = tl.program_id(1)
     split = tl.program_id(2)
 
+    # Issued ahead of the segment scan so its latency overlaps the scan's.
+    columns = tl.load(Info_ptr + 4)
     owned = False
     q_start = 0
     q_len = 0
     col = 0
     kv_end = 0
     for seg in range(NUM_SEGMENTS):
-        seg_q_start = tl.load(Info_ptr + seg * 4)
-        seg_q_len = tl.load(Info_ptr + seg * 4 + 1)
+        seg_q_start = tl.load(Info_ptr + seg * 5)
+        seg_q_len = tl.load(Info_ptr + seg * 5 + 1)
         take = (t >= seg_q_start) & (t < seg_q_start + seg_q_len)
         owned |= take
         q_start = tl.where(take, seg_q_start, q_start)
         q_len = tl.where(take, seg_q_len, q_len)
-        col = tl.where(take, tl.load(Info_ptr + seg * 4 + 2), col)
-        kv_end = tl.where(take, tl.load(Info_ptr + seg * 4 + 3), kv_end)
+        col = tl.where(take, tl.load(Info_ptr + seg * 5 + 2), col)
+        kv_end = tl.where(take, tl.load(Info_ptr + seg * 5 + 3), kv_end)
+    # Offsets within a BLOCK_N-row tile, and a tile's advance, use int32: they
+    # stay below BLOCK_N * columns * H_kv * D, which sdpa_varlen bounds by
+    # 2**31 at the declared width. Row pointers advance in 64 bits, so offsets
+    # across the whole storage may exceed int32.
+    stride_kr = columns * stride_kc
+    stride_vr = columns * stride_vc
 
     offs_g = tl.arange(0, BLOCK_G)
     offs_d = tl.arange(0, HEAD_DIM)
@@ -282,13 +294,15 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
     m_i = tl.full([BLOCK_G], -float("inf"), dtype=tl.float32)
     l_i = tl.zeros([BLOCK_G], dtype=tl.float32)
     acc = tl.zeros([BLOCK_G, HEAD_DIM], dtype=tl.float32)
-    k_base = K_ptr + col * stride_kc + h_kv * stride_kh
-    v_base = V_ptr + col * stride_vc + h_kv * stride_vh
+    row0 = start.to(tl.int64)
+    k_row = K_ptr + col * stride_kc + h_kv * stride_kh + row0 * stride_kr
+    v_row = V_ptr + col * stride_vc + h_kv * stride_vh + row0 * stride_vr
+    offs_b = tl.arange(0, BLOCK_N)
     for n0 in tl.range(start, stop, BLOCK_N):
-        offs_n = n0 + tl.arange(0, BLOCK_N)
+        offs_n = n0 + offs_b
         n_valid = offs_n < stop
         k = tl.load(
-            k_base + offs_n[:, None] * stride_kr + offs_d[None, :],
+            k_row + offs_b[:, None] * stride_kr + offs_d[None, :],
             mask=n_valid[:, None] & owned,
             other=0.0,
         )
@@ -315,13 +329,15 @@ def _sdpa_varlen_decode_kernel(  # noqa: C901
         p = tl.where(m_ij[:, None] > -float("inf"), tl.exp(qk - m_ij[:, None]), 0.0)
         alpha = tl.where(m_ij > -float("inf"), tl.exp(m_i - m_ij), 0.0)
         v = tl.load(
-            v_base + offs_n[:, None] * stride_vr + offs_d[None, :],
+            v_row + offs_b[:, None] * stride_vr + offs_d[None, :],
             mask=n_valid[:, None] & owned,
             other=0.0,
         )
         acc = acc * alpha[:, None] + tl.dot(p.to(v.dtype), v)
         l_i = l_i * alpha + tl.sum(p, axis=1)
         m_i = m_ij
+        k_row += BLOCK_N * stride_kr
+        v_row += BLOCK_N * stride_vr
 
     if NUM_SPLITS == 1:
         out = acc * tl.where(l_i > 0, 1.0 / l_i, 0.0)[:, None]
@@ -403,9 +419,11 @@ def sdpa_varlen(  # noqa: C901
     Args:
         query: ``[1, H_q, T, D]`` bfloat16, the step's queries in packed order.
         key, value: ``[rows, columns, H_kv, D]`` bfloat16 storage; one column per
-            sequence. Only the head dimension must be contiguous.
-        seq_info: ``Int32[S, 4]`` on the query's device, ``(q_start, q_len,
-            col, kv_end)`` per segment; see the module docstring.
+            sequence. Head and column lanes must be contiguous. The row pitch
+            is field 4 times the column stride, not key.stride(0).
+        seq_info: ``Int32[S, 5]`` on the query's device, ``(q_start, q_len,
+            col, kv_end, physical_columns)`` per segment; see the module
+            docstring.
         scale: softmax scale.
         is_causal: row ``r`` sees positions up to its own; otherwise every
             row sees all of ``[0, kv_end)``.
@@ -453,10 +471,22 @@ def sdpa_varlen(  # noqa: C901
         raise ValueError("head dimension must be a power of two in [16, 256]")
     if query.stride(-1) != 1 or key.stride(-1) != 1 or value.stride(-1) != 1:
         raise ValueError("sdpa_varlen needs a contiguous head dimension")
-    if seq_info.dtype != torch.int32 or seq_info.dim() != 2 or seq_info.shape[1] != 4:
-        raise ValueError("seq_info must be Int32[S, 4]")
+    if (
+        seq_info.dtype != torch.int32
+        or seq_info.dim() != 2
+        or seq_info.shape[0] < 1
+        or seq_info.shape[1] != 5
+    ):
+        raise ValueError("seq_info must be Int32[S, 5]")
     if seq_info.device != query.device or not seq_info.is_contiguous():
         raise ValueError("seq_info must be contiguous on the query device")
+    if (
+        key.stride(2) != D
+        or key.stride(1) != Hkv * D
+        or value.stride(2) != D
+        or value.stride(1) != Hkv * D
+    ):
+        raise ValueError("runtime-pitch KV needs contiguous column and head lanes")
     if context_window and is_causal:
         raise ValueError("context_window requires non-causal attention")
     if symmetric_window and (is_causal or context_window):
@@ -467,6 +497,14 @@ def sdpa_varlen(  # noqa: C901
     # range, so a dynamic step takes the generic path, valid for any T.
     static = isinstance(T, int)
     use_decode = static and T <= _SPLITK_MAX_QUERY
+    # The runtime pitch never exceeds the declared columns, so bounding a
+    # decode tile at the declared width checks it once, when traced or lowered.
+    if use_decode and _DECODE_BLOCK_N * key.shape[1] * key.stride(1) >= 2**31:
+        raise ValueError(
+            f"sdpa_varlen decode needs {_DECODE_BLOCK_N} * columns * H_kv * D "
+            f"< 2**31 for its int32 tile offsets; got columns={key.shape[1]}, "
+            f"H_kv={Hkv}, D={D}"
+        )
     block_m = 16 if static and T * groups <= 16 else 64
     num_qb = (T * groups + block_m - 1) // block_m
     generic_num_stages = 3 if static and T <= 64 else 2
@@ -496,10 +534,8 @@ def sdpa_varlen(  # noqa: C901
             T,
             query.stride(1),
             query.stride(2),
-            key.stride(0),
             key.stride(1),
             key.stride(2),
-            value.stride(0),
             value.stride(1),
             value.stride(2),
             out.stride(1),
@@ -513,7 +549,7 @@ def sdpa_varlen(  # noqa: C901
             SYMMETRIC_WINDOW=symmetric_window,
             WINDOW=window,
             RING=ring,
-            BLOCK_N=128,
+            BLOCK_N=_DECODE_BLOCK_N,
             HEAD_DIM=D,
             NUM_GROUPS=groups,
             BLOCK_G=triton.next_power_of_2(groups),
@@ -535,10 +571,8 @@ def sdpa_varlen(  # noqa: C901
             T,
             query.stride(1),
             query.stride(2),
-            key.stride(0),
             key.stride(1),
             key.stride(2),
-            value.stride(0),
             value.stride(1),
             value.stride(2),
             out.stride(1),

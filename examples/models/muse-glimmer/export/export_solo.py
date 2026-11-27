@@ -247,8 +247,7 @@ def _solo_constant_methods(
 
 # Read by CudaExecutor: the cell pool's size, which fixes its step buffers.
 MAX_CELLS_METHOD = "get_offgraph_kv_max_cells"
-# Read by CudaExecutor in place of the cell count when each sequence keeps a
-# private history: the sequence columns of every layer's storage.
+# Read by CudaExecutor for the declared sequence owner limit.
 MAX_KV_SEQS_METHOD = "get_offgraph_kv_max_seqs"
 # Read by MuseGlimmerCudaDFlashExecutor for the draft's own sequence columns,
 # mirroring kMaxSeqs in runtime/cuda_dflash_executor.h.

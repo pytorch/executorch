@@ -6,6 +6,8 @@
 
 import re
 import subprocess
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -23,6 +25,47 @@ CORRECTNESS_PATHS = (
 
 
 class MuseGlimmerBatchingCITest(unittest.TestCase):
+    def test_runtime_columns_probe_runs_in_cuda_ci(self):
+        workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
+        job = workflow.split("  unittest-cuda-muse-glimmer-batching:", 1)[1].split(
+            "  unittest-cuda-quantized-gemm:", 1
+        )[0]
+        self.assertIn("-DMUSE_GLIMMER_BUILD_RUNTIME_KV_PROBE=ON", job)
+        self.assertIn("muse_glimmer_runtime_kv_probe --parallel", job)
+        self.assertIn("tests/check_runtime_kv_columns.py", job)
+        self.assertIn("make muse-glimmer-batching-cuda", job)
+
+    @unittest.skipIf(sys.platform == "win32", "Linux workflow requires POSIX make")
+    def test_documented_make_target_uses_the_cpu_count(self):
+        result = subprocess.run(
+            ["make", "-n", "muse-glimmer-batching-cuda"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn('--parallel "$(nproc)"', result.stdout)
+        self.assertNotIn('--parallel ""', result.stdout)
+
+    @unittest.skipIf(sys.platform == "win32", "Linux workflow requires POSIX paths")
+    def test_cache_ci_guard_rejects_skipped_cases(self):
+        workflow = (ROOT / ".github/workflows/cuda.yml").read_text()
+        marker = '        if grep -q "SKIPPED" /tmp/test_cuda_kv_cache.log; then'
+        body = workflow.split(marker, 1)[1].split("        fi", 1)[0]
+        guard = marker.strip() + body + "fi"
+        with tempfile.TemporaryDirectory() as directory:
+            log = Path(directory) / "native.log"
+            guard = guard.replace("/tmp/test_cuda_kv_cache.log", str(log))
+            for output, expected in (
+                ("[ PASSED ] 77 tests", 0),
+                ("[ SKIPPED ] case", 1),
+            ):
+                log.write_text(output)
+                result = subprocess.run(
+                    ["bash", "-c", guard], capture_output=True, text=True
+                )
+                self.assertEqual(result.returncode, expected, result.stderr)
+
     def test_e2e_builds_smoke_before_running_it(self):
         script = (SCRIPTS / "test_model_e2e.sh").read_text()
         build = script.index("bash .ci/scripts/build_muse_glimmer_batching_smoke.sh")

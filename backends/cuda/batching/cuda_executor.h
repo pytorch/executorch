@@ -24,6 +24,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <executorch/backends/cuda/batching/step_plan.h>
@@ -227,7 +228,8 @@ class ET_EXPERIMENTAL CudaExecutor : public llm_batching::Executor {
 
   // The cache's pool usage, for memory reporting.
   OffGraphKVMetrics kv_metrics() const;
-
+  // Sequence-layout counters; read between executes, on the engine thread.
+  CudaGraphMetrics graph_metrics(std::string_view method) const;
   // Every method, narrowest first, with how many forwards it ran. Read it
   // between executes, not while one runs.
   std::vector<ForwardMethodCalls> method_calls() const;
