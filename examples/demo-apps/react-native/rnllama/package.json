@@ -60,7 +60,7 @@
     "on-headers": ">=1.1.0",
     "react-server-dom-webpack": "~19.0.9",
     "tar": ">=7.5.3",
-    "undici": "^6.28.1"
+    "undici": "^6.29.1"
   },
   "packageManager": "yarn@1.22.22+sha512.a6b2f7906b721bba3d67d4aff083df04dad64c399707841b7acf00f6b133b7ac24255f2652fa22ae3534329dc6180534e98d17432037ff6fd140556e2bb3137e"
 }
