@@ -317,7 +317,14 @@ def linear_q4gsw(
     weight_zeros = torch.zeros_like(weight_scales, dtype=torch.int32)
 
     weights = torch.ops.torchao.dequantize_affine(
-        weights, [1, group_size], weight_scales, weight_zeros, torch.int8, -8, 7
+        weights,
+        [1, group_size],
+        weight_scales,
+        weight_zeros,
+        torch.int8,
+        -8,
+        7,
+        output_dtype=x.dtype,
     )
 
     out = torch.nn.functional.linear(x, weights, bias)
@@ -1187,7 +1194,9 @@ def embedding_q4gsw_impl(
 
     unpacked_groups = unpacked.reshape(weight.shape[0], num_groups, group_size)
     dequantized = unpacked_groups.float() * scales.float()
-    dequantized = dequantized.reshape(weight.shape[0], -1)
+    # Output in the scales' dtype, like the fused embedding: always returning
+    # fp32 makes any retrace re-infer fp32 downstream of an fp16 model.
+    dequantized = dequantized.reshape(weight.shape[0], -1).to(weight_scales.dtype)
     return torch.nn.functional.embedding(indices, dequantized)
 
 
