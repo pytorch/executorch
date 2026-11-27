@@ -16,5 +16,7 @@ def define_common_targets():
             "//executorch/exir/backend:backend_details",
             "//executorch/exir/backend:compile_spec_schema",
             "//executorch/backends/qualcomm/serialization:serialization",
+            "//executorch/extension/llm/export:hf_static",
+            "//executorch/extension/llm/io_contracts:io_contracts",
         ],
     )
