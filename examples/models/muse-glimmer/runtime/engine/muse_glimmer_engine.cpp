@@ -24,6 +24,7 @@
 #include <cstring>
 #include <optional>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #ifdef EXECUTORCH_BUILD_CUDA
@@ -292,9 +293,11 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
     MuseGlimmerArtifactMode artifact_mode,
     bool has_vision,
     bool multi_session,
-    const OffGraphInstallGuard* offgraph_guard) {
+    const OffGraphInstallGuard* offgraph_guard,
+    bool pipelined_decode) {
 #ifndef EXECUTORCH_BUILD_CUDA
   (void)offgraph_guard;
+  (void)pipelined_decode;
 #endif
   std::vector<std::string> data_files;
   if (!config.data_path.empty()) {
@@ -314,7 +317,7 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
       /*share_memory_arenas=*/share_memory_arenas);
 
 #ifdef EXECUTORCH_BUILD_CUDA
-  executorch::runtime::BackendOptions<2> cuda_opts;
+  executorch::runtime::BackendOptions<3> cuda_opts;
   ET_CHECK_OK_OR_RETURN_ERROR(
       cuda_opts.set_option("weight_sharing_across_methods", true));
   if (config.enable_cuda_graph) {
@@ -325,6 +328,13 @@ Result<std::unique_ptr<Module>> build_muse_glimmer_module(
         cuda_opts.set_option("enable_cuda_graph_for_method", graph_methods));
     ET_LOG(Info, "MuseGlimmerEngine: CUDA graph enabled for %s", graph_methods);
   }
+  // A pipelined session orders its reads of each step's token on the
+  // per-thread stream itself, so the replay need not wait. The option is
+  // process-wide, so every engine that does not pipeline clears it, with or
+  // without CUDA graphs.
+  ET_CHECK_OK_OR_RETURN_ERROR(cuda_opts.set_option(
+      "async_replay_for_method",
+      pipelined_decode ? kDecodeFromEmbeddingMethod : ""));
   ET_CHECK_OK_OR_RETURN_ERROR(
       executorch::runtime::set_option("CudaBackend", cuda_opts.view()));
 #endif
@@ -579,6 +589,7 @@ class MuseGlimmerSession : public LLMSession,
       MuseGlimmerMutableStateContextOwner* mutable_state,
 #ifdef EXECUTORCH_BUILD_CUDA
       ::executorch::extension::llm::cache::SequenceControl* offgraph_control,
+      bool pipelined_decode,
 #endif
       int session_token)
       : module_(module),
@@ -610,6 +621,19 @@ class MuseGlimmerSession : public LLMSession,
     auto temp_host =
         from_blob(&temp_val_, {1}, executorch::aten::ScalarType::Float);
     temp_tensor_dev_ = clone_tensor_ptr_to(temp_host, cuda_device_);
+    pipelined_decode_ = pipelined_decode &&
+        cudaMallocHost(&pinned_io_, sizeof(PinnedDecodeIo) * kDecodeSlots) ==
+            cudaSuccess &&
+        cudaEventCreateWithFlags(&step_done_[0], cudaEventDisableTiming) ==
+            cudaSuccess &&
+        cudaEventCreateWithFlags(&step_done_[1], cudaEventDisableTiming) ==
+            cudaSuccess;
+    if (pipelined_decode && !pipelined_decode_) {
+      ET_LOG(
+          Info,
+          "MuseGlimmerSession: pinned decode buffers unavailable; decoding "
+          "one step at a time");
+    }
 #endif
 #ifdef EXECUTORCH_BUILD_MLX
     temp_tensor_mlx_ =
@@ -624,6 +648,17 @@ class MuseGlimmerSession : public LLMSession,
   }
 
   ~MuseGlimmerSession() override {
+#ifdef EXECUTORCH_BUILD_CUDA
+    (void)drain_decode_steps();
+    for (cudaEvent_t event : step_done_) {
+      if (event != nullptr) {
+        cudaEventDestroy(event);
+      }
+    }
+    if (pinned_io_ != nullptr) {
+      cudaFreeHost(pinned_io_);
+    }
+#endif
     if (mutable_state_ != nullptr &&
         session_token_ != kMuseGlimmerNoMutableSession) {
       mutable_state_->destroy_session(session_token_);
@@ -636,6 +671,9 @@ class MuseGlimmerSession : public LLMSession,
   Error prefill_tokens(
       const std::vector<uint64_t>& tokens,
       const SamplingConfig* initial_sampling) override {
+#ifdef EXECUTORCH_BUILD_CUDA
+    ET_CHECK_OK_OR_RETURN_ERROR(drain_decode_steps());
+#endif
     std::optional<PreparedMuseGlimmerImage> image = std::move(staged_image_);
     staged_image_.reset();
     preserve_staged_image_on_next_reset_ = false;
@@ -740,8 +778,12 @@ class MuseGlimmerSession : public LLMSession,
       ET_LOG(Error, "decode_one: temperature must be -1 or in [0, 2]");
       return Error::InvalidArgument;
     }
+    bool has_pending = pending_.has_value();
+#ifdef EXECUTORCH_BUILD_CUDA
+    has_pending = has_pending || token_step_.has_value();
+#endif
     ET_CHECK_OR_RETURN_ERROR(
-        pending_.has_value(),
+        has_pending,
         InvalidState,
         "decode_one requires a pending token; call prefill_tokens() first");
     temperature_ = sampling.temperature;
@@ -757,19 +799,17 @@ class MuseGlimmerSession : public LLMSession,
     if (stop_.load(std::memory_order_relaxed)) {
       return DecodeResult{0, "", /*is_eos=*/false, /*is_terminal=*/true};
     }
+#ifdef EXECUTORCH_BUILD_CUDA
+    if (pipelined_decode_) {
+      return decode_one_pipelined();
+    }
+#endif
 
     const uint64_t token = pending_.value();
     const bool is_eos = eos_ids_.find(token) != eos_ids_.end();
-    const uint64_t prev = prev_decode_token_.value_or(token);
-    auto dec = tokenizer_->decode(prev, token);
-    if (!dec.ok()) {
-      ET_LOG(
-          Error,
-          "Tokenizers error code %d",
-          static_cast<uint32_t>(dec.error()));
-      return Error::InvalidArgument;
-    }
-    std::string text_piece = std::move(*dec);
+    auto piece = token_piece(token);
+    ET_CHECK_OK_OR_RETURN_ERROR(piece.error());
+    std::string text_piece = std::move(piece.get());
 
     if (is_eos) {
       pending_.reset();
@@ -845,6 +885,9 @@ class MuseGlimmerSession : public LLMSession,
   }
 
   Error reset() override {
+#ifdef EXECUTORCH_BUILD_CUDA
+    ET_CHECK_OK_OR_RETURN_ERROR(drain_decode_steps());
+#endif
     pos_ = 0;
 #ifdef EXECUTORCH_BUILD_CUDA
     if (offgraph_control_ != nullptr) {
@@ -937,6 +980,18 @@ class MuseGlimmerSession : public LLMSession,
     return top_p > 0.0f && top_p <= 1.0f;
   }
 
+  Result<std::string> token_piece(uint64_t token) {
+    auto dec = tokenizer_->decode(prev_decode_token_.value_or(token), token);
+    if (!dec.ok()) {
+      ET_LOG(
+          Error,
+          "Tokenizers error code %d",
+          static_cast<uint32_t>(dec.error()));
+      return Error::InvalidArgument;
+    }
+    return std::move(*dec);
+  }
+
 #ifdef EXECUTORCH_BUILD_MLX
   void
   set_sampling_inputs(float temp, int64_t top_k, float top_p, uint64_t seed) {
@@ -1025,7 +1080,201 @@ class MuseGlimmerSession : public LLMSession,
       ET_LOG(Error, "set_temperature: cudaMemcpy H2D failed");
       return Error::Internal;
     }
+    device_temperature_ = temp_val_;
     return Error::Ok;
+  }
+
+  static Error check_cuda(cudaError_t status, const char* what) {
+    if (status == cudaSuccess) {
+      return Error::Ok;
+    }
+    ET_LOG(Error, "%s: %s", what, cudaGetErrorString(status));
+    return Error::Internal;
+  }
+
+  // Enqueues one decode step (embed_text, then the decode_from_embedding
+  // graph) at pos_ on this thread's per-thread stream, where the CUDA delegate
+  // runs both, and returns without waiting for the graph. The step reads its
+  // input token from decode_tokens_dev_, where the step before it (or prefill)
+  // staged it; its own token is staged there for the next step and copied to
+  // the slot's pinned memory, read once the slot's event fires. The step
+  // before it may have been enqueued from another thread, on that thread's
+  // stream, so this step's stream first waits for that step's event.
+  Error launch_decode_step(int slot) {
+    PinnedDecodeIo& io = pinned_io_[slot];
+    const cudaStream_t stream = cudaStreamPerThread;
+    if (token_step_.has_value()) {
+      ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+          cudaStreamWaitEvent(stream, step_done_[*token_step_], 0),
+          "launch_decode_step: wait for the previous step"));
+    }
+    auto* pos_slot = static_cast<int64_t*>(decode_pos_dev_->mutable_data_ptr());
+    if (decode_pos_table_dev_ != nullptr) {
+      const auto* pos_table =
+          static_cast<const int64_t*>(decode_pos_table_dev_->const_data_ptr());
+      ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+          cudaMemcpyAsync(
+              pos_slot,
+              pos_table + pos_,
+              sizeof(int64_t),
+              cudaMemcpyDeviceToDevice,
+              stream),
+          "launch_decode_step: position copy"));
+    } else {
+      io.pos = pos_;
+      ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+          cudaMemcpyAsync(
+              pos_slot,
+              &io.pos,
+              sizeof(int64_t),
+              cudaMemcpyHostToDevice,
+              stream),
+          "launch_decode_step: position copy"));
+    }
+    const float temperature = temperature_ > 0.0f ? temperature_ : 0.0f;
+    if (temperature != device_temperature_) {
+      io.temperature = temperature;
+      ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+          cudaMemcpyAsync(
+              temp_tensor_dev_->mutable_data_ptr(),
+              &io.temperature,
+              sizeof(float),
+              cudaMemcpyHostToDevice,
+              stream),
+          "launch_decode_step: temperature copy"));
+      temp_val_ = temperature;
+      device_temperature_ = temperature;
+    }
+
+    std::lock_guard<std::mutex> guard(*exec_mutex_);
+    auto embedded =
+        module_->execute(kEmbedTextMethod, {EValue(decode_tokens_dev_)});
+    ET_CHECK_OK_OR_RETURN_ERROR(embedded.error());
+    ET_CHECK_OR_RETURN_ERROR(
+        embedded->size() == 1 && (*embedded)[0].isTensor(),
+        InvalidProgram,
+        "embed_text must return one tensor");
+    auto outputs = module_->execute(
+        kDecodeFromEmbeddingMethod,
+        {(*embedded)[0], EValue(decode_pos_dev_), EValue(temp_tensor_dev_)});
+    ET_CHECK_OK_OR_RETURN_ERROR(outputs.error());
+    ET_CHECK_OR_RETURN_ERROR(
+        outputs->size() == 1 && (*outputs)[0].isTensor(),
+        InvalidProgram,
+        "decode_from_embedding must return one tensor");
+    const auto& sampled = (*outputs)[0].toTensor();
+    ET_CHECK_OR_RETURN_ERROR(
+        sampled.scalar_type() == executorch::aten::ScalarType::Long &&
+            sampled.numel() == 1,
+        InvalidProgram,
+        "decode_from_embedding must return one int64 token");
+    ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+        cudaMemcpyAsync(
+            decode_tokens_dev_->mutable_data_ptr(),
+            sampled.const_data_ptr(),
+            sizeof(int64_t),
+            cudaMemcpyDefault,
+            stream),
+        "launch_decode_step: token staging"));
+    ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+        cudaMemcpyAsync(
+            &io.token,
+            sampled.const_data_ptr(),
+            sizeof(int64_t),
+            cudaMemcpyDefault,
+            stream),
+        "launch_decode_step: token readback"));
+    ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+        cudaEventRecord(step_done_[slot], stream),
+        "launch_decode_step: event"));
+    return Error::Ok;
+  }
+
+  Result<uint64_t> wait_for_step(int slot) {
+    ET_CHECK_OK_OR_RETURN_ERROR(check_cuda(
+        cudaEventSynchronize(step_done_[slot]), "decode step failed"));
+    return static_cast<uint64_t>(pinned_io_[slot].token);
+  }
+
+  // Waits for every enqueued decode step, even after a failed wait, so none
+  // is left writing into pinned memory, and drops its token.
+  Error drain_decode_steps() {
+    Error first_error = Error::Ok;
+    for (std::optional<int>* step : {&token_step_, &launched_step_}) {
+      if (step->has_value()) {
+        const int slot = **step;
+        step->reset();
+        const Error error = wait_for_step(slot).error();
+        if (first_error == Error::Ok) {
+          first_error = error;
+        }
+      }
+    }
+    return first_error;
+  }
+
+  // Enqueues the step that feeds the current token at pos_ before waiting for
+  // the step that computes the current token, so the host's work for one step
+  // (embed_text, input copies, graph launch, detokenizing) overlaps the GPU's
+  // work on the one before. The enqueued step is tracked from its launch and
+  // becomes the token step only when this call returns the current token.
+  // When the call fails after the launch, the session keeps the current token
+  // and the step, as the token-by-token path keeps its pending token, and a
+  // retry reuses the step. When the current token turns out to be EOS, the
+  // step is discarded: like the token-by-token path, the session then stays at
+  // pos_, and the step's KV write at pos_ is overwritten by whatever the
+  // session prefills next.
+  Result<DecodeResult> decode_one_pipelined() {
+    const auto ctx_it = metadata_.find(kMaxContextLen);
+    const bool has_room = ctx_it == metadata_.end() || pos_ < ctx_it->second;
+    const bool known_eos =
+        pending_.has_value() && eos_ids_.find(*pending_) != eos_ids_.end();
+    if (has_room && !known_eos && !launched_step_.has_value()) {
+      const int slot = next_slot_;
+      const Error launched = launch_decode_step(slot);
+      if (launched != Error::Ok) {
+        abandon_decode_steps();
+        return launched;
+      }
+      launched_step_ = slot;
+      next_slot_ = (slot + 1) % kDecodeSlots;
+    }
+    if (token_step_.has_value()) {
+      auto sampled = wait_for_step(*token_step_);
+      ET_CHECK_OK_OR_RETURN_ERROR(sampled.error());
+      token_step_.reset();
+      pending_ = sampled.get();
+    }
+    const uint64_t token = pending_.value();
+    auto piece = token_piece(token);
+    ET_CHECK_OK_OR_RETURN_ERROR(piece.error());
+    const bool is_eos = eos_ids_.find(token) != eos_ids_.end();
+    ET_CHECK_OR_RETURN_ERROR(
+        is_eos || has_room,
+        InvalidArgument,
+        "decode_one would exceed context capacity: pos_ %" PRId64,
+        pos_);
+    pending_.reset();
+    if (is_eos) {
+      return DecodeResult{
+          token, std::move(piece.get()), /*is_eos=*/true, /*is_terminal=*/true};
+    }
+    token_step_ = std::exchange(launched_step_, std::nullopt);
+    prev_decode_token_ = token;
+    pos_ += 1;
+    return DecodeResult{
+        token, std::move(piece.get()), /*is_eos=*/false, /*is_terminal=*/false};
+  }
+
+  // A failed launch can leave part of its step on this thread's stream and
+  // the device copy of the current token overwritten. Wait for the tracked
+  // steps, which may run on another thread's stream, and for this stream, then
+  // drop the current token, so the session needs a prefill or reset to decode
+  // again.
+  void abandon_decode_steps() {
+    (void)drain_decode_steps();
+    (void)cudaStreamSynchronize(cudaStreamPerThread);
+    pending_.reset();
   }
 
   Error copy_decode_token_to_cuda(uint64_t token) {
@@ -1225,6 +1474,28 @@ class MuseGlimmerSession : public LLMSession,
   TensorPtr decode_tokens_dev_;
   TensorPtr decode_pos_dev_;
   TensorPtr temp_tensor_dev_;
+  // The temperature temp_tensor_dev_ holds; negative until first written.
+  float device_temperature_ = -1.0f;
+
+  // Pipelined decode keeps up to two steps in flight, each with its own
+  // pinned host words (written before launch, read after its event) and
+  // completion event.
+  struct PinnedDecodeIo {
+    int64_t token = 0;
+    int64_t pos = 0;
+    float temperature = 0.0f;
+  };
+  static constexpr int kDecodeSlots = 2;
+  bool pipelined_decode_ = false;
+  PinnedDecodeIo* pinned_io_ = nullptr;
+  cudaEvent_t step_done_[kDecodeSlots] = {nullptr, nullptr};
+  int next_slot_ = 0;
+  // The step computing the token the next decode_one returns.
+  std::optional<int> token_step_;
+  // The step enqueued for the current token, until decode_one returns that
+  // token; after an EOS, it is waited for and dropped by the next prefill or
+  // reset.
+  std::optional<int> launched_step_;
 #endif
 #ifdef EXECUTORCH_BUILD_MLX
   float temp_val_mlx_ = 0.0f;
@@ -1571,9 +1842,33 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
   // skip_mutable_buffer_init, so the skip flag can never diverge from the
   // owner.
   const bool multi_session = mutable_state != nullptr;
+  bool pipelined_decode = false;
+#ifdef EXECUTORCH_BUILD_CUDA
+  // A decode method that returns an int64 token lets one session keep the
+  // token on the device and enqueue each step before reading the previous one
+  // back. Only graph replays return before the GPU finishes, so without CUDA
+  // graphs nothing would overlap. One in-graph session only: neither
+  // per-session rebinding nor the off-graph KV cache, which commits on the host
+  // after each step, allows an unfinished step.
+  if (config.pipelined_decode && config.enable_cuda_graph &&
+      artifact_mode == MuseGlimmerArtifactMode::Autoregressive &&
+      !multi_session && offgraph_install == nullptr) {
+    auto decode_meta = meta_module->method_meta(kDecodeFromEmbeddingMethod);
+    if (decode_meta.ok() && decode_meta->num_outputs() == 1) {
+      auto token_meta = decode_meta->output_tensor_meta(0);
+      pipelined_decode = token_meta.ok() &&
+          token_meta->scalar_type() == executorch::aten::ScalarType::Long;
+    }
+  }
+#endif
   auto build_module = [&]() {
     return build_muse_glimmer_module(
-        config, artifact_mode, has_vision, multi_session, offgraph_install);
+        config,
+        artifact_mode,
+        has_vision,
+        multi_session,
+        offgraph_install,
+        pipelined_decode);
   };
   // The in-graph path still scopes its load, because mutable-buffer rebinding
   // has no registry key to travel on.
@@ -1636,6 +1931,7 @@ Result<std::unique_ptr<MuseGlimmerEngine>> MuseGlimmerEngine::create(
   // module loads, which happens above.
   engine->offgraph_guard_ = std::move(offgraph_guard);
   engine->offgraph_control_ = offgraph_control;
+  engine->pipelined_decode_ = pipelined_decode;
 #endif
   if (has_vision) {
     MuseGlimmerVisionRuntimeConfig vision_config;
@@ -1769,6 +2065,7 @@ Result<std::unique_ptr<LLMSession>> MuseGlimmerEngine::create_session() {
       rebind_available_ ? mutable_state_.get() : nullptr,
 #ifdef EXECUTORCH_BUILD_CUDA
       offgraph_control_,
+      pipelined_decode_,
 #endif
       token));
 }

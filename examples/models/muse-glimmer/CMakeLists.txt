@@ -400,6 +400,31 @@ if(MUSE_GLIMMER_BUILD_BATCHING OR MUSE_GLIMMER_BUILD_BATCHING_TESTS)
       add_test(NAME muse_glimmer_cuda_dflash
                COMMAND muse_glimmer_cuda_dflash_test
       )
+      # Pipelined Solo decode on a tiny export; needs ET_MUSE_SOLO_TINY_DIR.
+      add_executable(
+        muse_glimmer_solo_pipelined_decode_test
+        tests/solo_pipelined_decode_test.cpp
+        runtime/engine/muse_glimmer_engine.cpp
+        runtime/engine/dflash_session.cpp
+        runtime/engine/muse_glimmer_vision_runtime.cpp
+      )
+      target_include_directories(
+        muse_glimmer_solo_pipelined_decode_test
+        PRIVATE ${_common_include_directories} ${_json_include}
+      )
+      target_link_libraries(
+        muse_glimmer_solo_pipelined_decode_test PRIVATE ${link_libraries}
+                                                        GTest::gtest_main
+      )
+      if(NOT APPLE AND NOT MSVC)
+        target_link_options(
+          muse_glimmer_solo_pipelined_decode_test PRIVATE
+          "LINKER:--export-dynamic"
+        )
+      endif()
+      add_test(NAME muse_glimmer_solo_pipelined_decode
+               COMMAND muse_glimmer_solo_pipelined_decode_test
+      )
     endif()
   endif()
 endif()

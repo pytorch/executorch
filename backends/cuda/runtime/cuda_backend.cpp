@@ -88,6 +88,9 @@ constexpr char kSkipCopyOutputToCpuForMethod[] =
 constexpr char kUseSharedCudaStream[] = "use_shared_cuda_stream";
 
 constexpr char kEnableCudaGraphForMethod[] = "enable_cuda_graph_for_method";
+// Methods whose CUDA graph replay returns once the replay is enqueued, instead
+// of waiting for it to finish.
+constexpr char kAsyncReplayForMethod[] = "async_replay_for_method";
 constexpr int kCudaGraphWarmupSteps = 3;
 constexpr char kWeightSharingAcrossMethods[] = "weight_sharing_across_methods";
 } // anonymous namespace
@@ -224,6 +227,20 @@ class ET_EXPERIMENTAL CudaBackend final
     }
     std::lock_guard<std::mutex> guard(cuda_graph_method_mutex_);
     return method_in_csv(method_name, cuda_graph_method_);
+  }
+
+  void set_async_replay_method(
+      const std::array<char, kMaxOptionValueLength>& raw) {
+    std::lock_guard<std::mutex> guard(cuda_graph_method_mutex_);
+    async_replay_method_ = std::string(raw.data());
+  }
+
+  bool should_replay_async_for_method(const std::string& method_name) const {
+    if (method_name.empty()) {
+      return false;
+    }
+    std::lock_guard<std::mutex> guard(cuda_graph_method_mutex_);
+    return method_in_csv(method_name, async_replay_method_);
   }
 
   // Enable the legacy dense-blob per-FQN cache. New FQN artifacts use
@@ -386,6 +403,17 @@ class ET_EXPERIMENTAL CudaBackend final
           return Error::InvalidArgument;
         }
 #endif
+      } else if (std::strcmp(option.key, kAsyncReplayForMethod) == 0) {
+        if (auto* val = std::get_if<std::array<char, kMaxOptionValueLength>>(
+                &option.value)) {
+          set_async_replay_method(*val);
+        } else {
+          ET_LOG(
+              Error,
+              "Option %s must be a method name string.",
+              kAsyncReplayForMethod);
+          return Error::InvalidArgument;
+        }
       }
     }
     return Error::Ok;
@@ -393,8 +421,16 @@ class ET_EXPERIMENTAL CudaBackend final
 
   Error get_option(
       ET_UNUSED BackendOptionContext& context,
-      ET_UNUSED executorch::runtime::Span<BackendOption>& backend_options)
-      override {
+      executorch::runtime::Span<BackendOption>& backend_options) override {
+    for (BackendOption& option : backend_options) {
+      if (std::strcmp(option.key, kAsyncReplayForMethod) == 0) {
+        std::array<char, kMaxOptionValueLength> value{};
+        std::lock_guard<std::mutex> guard(cuda_graph_method_mutex_);
+        std::strncpy(
+            value.data(), async_replay_method_.c_str(), value.size() - 1);
+        option.value = value;
+      }
+    }
     return Error::Ok;
   }
 
@@ -664,6 +700,23 @@ class ET_EXPERIMENTAL CudaBackend final
       }
     }
 
+    // A replay that returns early leaves the caller to order every host read
+    // of the method's outputs on this thread's per-thread stream, and to see
+    // the replay's errors at its own synchronization. The off-graph KV cache
+    // commits each step on the host after the replay, so its methods wait.
+    handle->async_replay =
+        handle->cuda_graph_state.phase != CudaGraphPhase::Disabled &&
+        should_replay_async_for_method(method_name);
+#if defined(EXECUTORCH_BUILD_EXTENSION_LLM)
+    handle->async_replay = handle->async_replay && handle->kv_cache == nullptr;
+#endif
+    if (handle->async_replay) {
+      ET_LOG(
+          Info,
+          "CUDA graph replays of method '%s' return without waiting",
+          method_name.c_str());
+    }
+
     mutable_state_note_handle(handle);
 
     live_handles_.fetch_add(1, std::memory_order_acq_rel);
@@ -865,7 +918,9 @@ class ET_EXPERIMENTAL CudaBackend final
             cudaMemcpyDeviceToDevice,
             cs));
       }
-      ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cs));
+      if (!handle->async_replay) {
+        ET_CUDA_CHECK_OR_RETURN_ERROR(cudaStreamSynchronize(cs));
+      }
 
       return commit_offgraph_kv_step(handle, kv_step_width);
     }
@@ -1390,6 +1445,7 @@ class ET_EXPERIMENTAL CudaBackend final
 
   mutable std::mutex cuda_graph_method_mutex_;
   std::string cuda_graph_method_;
+  std::string async_replay_method_;
 
   // Whether to enable cross-method caching for legacy dense-blob artifacts.
   // Toggled by the kWeightSharingAcrossMethods runtime backend option. Default
