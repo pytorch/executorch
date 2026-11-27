@@ -1335,7 +1335,12 @@ class CudaBackend(AotiBackend, BackendDetails):
         edge_programs: Dict[str, List[Any]],
         compile_specs: Dict[str, List[List[CompileSpec]]],
     ) -> Dict[str, List[PreprocessResult]]:
-        """Compile every method against one global ``(device, FQN)`` store."""
+        """Compile every method against one global ``(device, FQN)`` store.
+
+        One FQN may hold different data per method; the collector stores
+        each distinct storage under its own content key. FQNs any method
+        mutates must start from the same data in every method.
+        """
         # The methods share one weights file, so they must agree on its name.
         data_names = {
             cls.data_name_from_compile_specs(specs)
@@ -1347,7 +1352,13 @@ class CudaBackend(AotiBackend, BackendDetails):
                 "Every method of a program must use the same data name, got "
                 f"{sorted(data_names)}"
             )
-        collector = CudaWeightCollector()
+        mutated_fqns = set()
+        for programs in edge_programs.values():
+            for program in programs:
+                mutated_fqns.update(
+                    program.graph_signature.buffers_to_mutate.values()
+                )
+        collector = CudaWeightCollector(mutated_fqns)
         results: Dict[str, List[PreprocessResult]] = {}
         for method_name, programs in edge_programs.items():
             if method_name not in compile_specs:

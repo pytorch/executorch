@@ -386,7 +386,9 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             for storage in artifact.storages.values():
                 storage.close()
 
-    def test_same_fqn_with_different_data_is_rejected_when_merged(self) -> None:
+    def test_same_fqn_with_different_data_is_stored_per_program_when_merged(
+        self,
+    ) -> None:
         first = torch.zeros(4)
         second = torch.ones(4)
 
@@ -405,13 +407,32 @@ class TestCudaLowMemoryExport(unittest.TestCase):
             self.assertEqual(first_key, second_key)
 
             collector = CudaWeightCollector()
-            collector.add_preprocess_result(
-                self._parent_result("first_so"), first_artifact, "cuda"
-            )
-            with self.assertRaisesRegex(ValueError, "different data"):
-                collector.add_preprocess_result(
-                    self._parent_result("second_so"), second_artifact, "cuda"
+            first_result = self._parent_result("first_so")
+            second_result = self._parent_result("second_so")
+            collector.add_preprocess_result(first_result, first_artifact, "cuda")
+            collector.add_preprocess_result(second_result, second_artifact, "cuda")
+            collector.finish()
+
+            first_entry = decode_cuda_aoti_metadata(
+                first_result.processed_bytes
+            ).entries[0]
+            second_entry = decode_cuda_aoti_metadata(
+                second_result.processed_bytes
+            ).entries[0]
+            self.assertNotEqual(first_entry.storage_key, second_entry.storage_key)
+            stored = {
+                key: (
+                    buffer if isinstance(buffer, bytes) else buffer.to_bytes()
                 )
+                for key, index in collector._store.key_to_buffer_idx.items()
+                for buffer in (collector._store.buffers[index],)
+            }
+            self.assertEqual(
+                stored[first_entry.storage_key], bytes(first.untyped_storage())
+            )
+            self.assertEqual(
+                stored[second_entry.storage_key], bytes(second.untyped_storage())
+            )
 
             for artifact in (first_artifact, second_artifact):
                 for storage in artifact.storages.values():
