@@ -1,3 +1,4 @@
+load("@fbsource//tools/build_defs/testinfra:network_access_utils.bzl", "network_access_utils")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 load("@fbcode_macros//build_defs:python_unittest.bzl", "python_unittest")
 load("@fbcode_macros//build_defs:python_unittest_remote_gpu.bzl", "python_unittest_remote_gpu")
@@ -434,6 +435,7 @@ def define_common_targets(is_fbcode = False):
             "//executorch/extension/llm/export:quant",
         ],
         keep_gpu_sections = True,
+        network_access = network_access_utils.remote_execution_only_loopback(),
         remote_execution = re_test_utils.remote_execution(
             platform = "gpu-remote-execution",
             subplatform = "A100",
