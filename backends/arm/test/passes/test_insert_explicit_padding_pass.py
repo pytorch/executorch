@@ -3,9 +3,10 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
+import pytest
 import torch
-from executorch.backends.arm._passes.insert_dynamic_padding import (
-    InsertDynamicPaddingPass,
+from executorch.backends.arm._passes.insert_explicit_padding import (
+    InsertExplicitPaddingPass,
 )
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
 from executorch.backends.arm._passes.symbolic_to_tosa_shape_pass import (
@@ -87,7 +88,7 @@ def _export_conv_model(conv_cls, example_inputs, dynamic_shapes):
     return edge_model, shape_env
 
 
-def test_insert_dynamic_padding():
+def test_insert_explicit_padding():
     edge_model, shape_env = _export_conv_model(
         ConvModule,
         (torch.randn(1, 3, 8, 8),),
@@ -113,7 +114,7 @@ def test_insert_dynamic_padding():
             for p in initial_padding
         ]
 
-        edge_model = edge_model.transform([InsertDynamicPaddingPass()])
+        edge_model = edge_model.transform([InsertExplicitPaddingPass()])
         edge_model = edge_model.transform([SymbolicToTosaShapesPass()])
         graph_module = edge_model.exported_program().graph_module
 
@@ -145,7 +146,7 @@ def test_insert_dynamic_padding():
         )
 
 
-def test_insert_dynamic_padding_conv3d():
+def test_insert_explicit_padding_conv3d():
     edge_model, shape_env = _export_conv_model(
         Conv3dModule,
         (torch.randn(1, 3, 8, 8, 8),),
@@ -174,7 +175,7 @@ def test_insert_dynamic_padding_conv3d():
             for p in initial_padding
         ]
 
-        edge_model = edge_model.transform([InsertDynamicPaddingPass()])
+        edge_model = edge_model.transform([InsertExplicitPaddingPass()])
         edge_model = edge_model.transform([SymbolicToTosaShapesPass()])
         graph_module = edge_model.exported_program().graph_module
 
@@ -203,3 +204,96 @@ def test_insert_dynamic_padding_conv3d():
             expected_full_padding_len=10,
             expected_spatial_padding=initial_padding_vals,
         )
+
+
+@pytest.mark.parametrize("dtype, minimum", [(torch.int8, -128), (torch.int16, -32768)])
+@pytest.mark.parametrize(
+    "enabled, stride, padding, expected_padding",
+    [
+        (True, [5, 5], [1, 0, 2, 0], True),
+        (False, [5, 5], [1, 0, 2, 0], False),
+        (True, [3, 3], [1, 0, 2, 0], False),
+        (True, [5, 5], [0, 0, 0, 0], False),
+    ],
+)
+def test_static_large_stride_max_pool_padding(
+    dtype, minimum, enabled, stride, padding, expected_padding
+):
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 20, 20, 8), dtype=dtype, device="meta")
+    pool = graph.call_function(
+        exir_ops.backend.tosa.MAX_POOL2D.default,
+        (x, [5, 5], stride, padding),
+    )
+    pool.meta["val"] = torch.empty((1, 4, 4, 8), dtype=dtype, device="meta")
+    graph.output(pool)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT+int16")
+    ):
+        result = InsertExplicitPaddingPass(large_stride_pool_padding=enabled)(
+            GraphModule({}, graph)
+        )
+
+    nodes = list(result.graph_module.graph.nodes)
+    pads = [n for n in nodes if n.target == exir_ops.backend.tosa.PAD.default]
+    assert len(pads) == int(expected_padding)
+    rewritten_pool = next(
+        n for n in nodes if n.target == exir_ops.backend.tosa.MAX_POOL2D.default
+    )
+    if expected_padding:
+        assert rewritten_pool.args[0] == pads[0]
+        assert rewritten_pool.args[3] == [0, 0, 0, 0]
+        assert pads[0].args[1].args[0] == [0, 0, 1, 0, 2, 0, 0, 0]
+        assert pads[0].args[2].args[0] == [minimum]
+    else:
+        assert rewritten_pool.args[3] == padding
+
+
+@pytest.mark.parametrize("dtype", [torch.int8, torch.int16])
+@pytest.mark.parametrize(
+    "padding, cropped_shape, expected_padding",
+    [
+        ([1, -1, 0, 0], [1, 19, 20, 8], [0, 0, 1, 0, 0, 0, 0, 0]),
+        ([0, 0, 2, -2], [1, 20, 18, 8], [0, 0, 0, 0, 2, 0, 0, 0]),
+        ([1, -1, 2, -2], [1, 19, 18, 8], [0, 0, 1, 0, 2, 0, 0, 0]),
+    ],
+)
+def test_static_large_stride_max_pool_crops_negative_padding(
+    dtype, padding, cropped_shape, expected_padding
+):
+    graph = torch.fx.Graph()
+    x = graph.placeholder("x")
+    x.meta["val"] = torch.empty((1, 20, 20, 8), dtype=dtype, device="meta")
+    pool = graph.call_function(
+        exir_ops.backend.tosa.MAX_POOL2D.default,
+        (x, [5, 5], [5, 5], padding),
+    )
+    pool.meta["val"] = torch.empty((1, 4, 4, 8), dtype=dtype, device="meta")
+    graph.output(pool)
+
+    with TosaLoweringContext(
+        TosaSpecification.create_from_string("TOSA-1.0+INT+int16")
+    ):
+        result = InsertExplicitPaddingPass(large_stride_pool_padding=True)(
+            GraphModule({}, graph)
+        )
+
+    nodes = list(result.graph_module.graph.nodes)
+    slices = [n for n in nodes if n.target == exir_ops.backend.tosa.SLICE.default]
+    assert len(slices) == 1
+    crop = slices[0]
+    assert crop.args[0].op == "placeholder"
+    assert crop.args[1].args[0] == [0, 0, 0, 0]
+    assert crop.args[2].args[0] == cropped_shape
+    pad = next(n for n in nodes if n.target == exir_ops.backend.tosa.PAD.default)
+    assert pad.args[0] == crop
+    assert pad.args[1].args[0] == expected_padding
+    assert pad.args[2].args[0] == [torch.iinfo(dtype).min]
+    rewritten_pool = next(
+        n for n in nodes if n.target == exir_ops.backend.tosa.MAX_POOL2D.default
+    )
+    assert rewritten_pool.args[0] == pad
+    assert rewritten_pool.args[3] == [0, 0, 0, 0]
+    assert tuple(rewritten_pool.meta["val"].shape) == (1, 4, 4, 8)
