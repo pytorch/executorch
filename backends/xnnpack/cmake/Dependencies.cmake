@@ -53,6 +53,57 @@ if(EXECUTORCH_XNNPACK_ENABLE_KLEIDI)
       ON
       CACHE BOOL ""
   )
+  # XNNPACK downloads KleidiAI with ExternalProject, which never retries: a
+  # transient 502 from gitlab.arm.com fails the whole build (seen repeatedly in
+  # test-models-linux-aarch64). Download it here with retries and point XNNPACK
+  # at the local copy instead (XNNPACK skips its own download when
+  # KLEIDIAI_SOURCE_DIR is defined). The version and hash must match XNNPACK's
+  # cmake/DownloadKleidiAI.cmake.
+  if(NOT DEFINED KLEIDIAI_SOURCE_DIR AND CMAKE_SYSTEM_PROCESSOR MATCHES
+                                         "^(aarch64|arm64|ARM64)$"
+  )
+    set(KLEIDIAI_VERSION "b87ef9c94f45f11c81a6b1fdaed1b2b45ea58c0c")
+    set(KLEIDIAI_URL
+        "https://gitlab.arm.com/kleidi/kleidiai/-/archive/${KLEIDIAI_VERSION}/kleidiai-${KLEIDIAI_VERSION}.zip"
+    )
+    set(KLEIDIAI_DOWNLOAD_DIR "${CMAKE_BINARY_DIR}/kleidiai-download")
+    set(KLEIDIAI_ZIP "${KLEIDIAI_DOWNLOAD_DIR}/kleidiai.zip")
+    file(MAKE_DIRECTORY "${KLEIDIAI_DOWNLOAD_DIR}")
+    set(KLEIDIAI_DOWNLOADED FALSE)
+    foreach(KLEIDIAI_ATTEMPT RANGE 1 5)
+      file(
+        DOWNLOAD "${KLEIDIAI_URL}" "${KLEIDIAI_ZIP}"
+        EXPECTED_HASH
+          SHA256=b147799b94c51f5e57492930bfd9e5294fb7ffe44fee1dbcd3f8048adeedd5e3
+        STATUS KLEIDIAI_STATUS
+        TIMEOUT 180
+      )
+      list(GET KLEIDIAI_STATUS 0 KLEIDIAI_CODE)
+      if(KLEIDIAI_CODE EQUAL 0)
+        set(KLEIDIAI_DOWNLOADED TRUE)
+        break()
+      endif()
+      message(
+        STATUS
+          "KleidiAI download attempt ${KLEIDIAI_ATTEMPT} failed (${KLEIDIAI_STATUS}); retrying..."
+      )
+      execute_process(COMMAND "${CMAKE_COMMAND}" -E sleep 10)
+    endforeach()
+    if(NOT KLEIDIAI_DOWNLOADED)
+      message(
+        FATAL_ERROR
+          "Failed to download KleidiAI from ${KLEIDIAI_URL} after 5 attempts: ${KLEIDIAI_STATUS}"
+      )
+    endif()
+    execute_process(
+      COMMAND "${CMAKE_COMMAND}" -E tar xzf "${KLEIDIAI_ZIP}"
+      WORKING_DIRECTORY "${KLEIDIAI_DOWNLOAD_DIR}"
+    )
+    set(KLEIDIAI_SOURCE_DIR
+        "${KLEIDIAI_DOWNLOAD_DIR}/kleidiai-${KLEIDIAI_VERSION}"
+        CACHE PATH "KleidiAI source directory (pre-downloaded by ExecuTorch)"
+    )
+  endif()
 else()
   set(XNNPACK_ENABLE_KLEIDIAI
       OFF
