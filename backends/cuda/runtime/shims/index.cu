@@ -1013,6 +1013,42 @@ __global__ void scatter_offsets_kernel(
   }
 }
 
+// Writes value at every element index names. Points that name the same
+// element all write the same value, so the result does not depend on
+// scheduling and needs no sort.
+template <typename T>
+__global__ void scatter_value_kernel(
+    const ScatterPlan plan,
+    int64_t points,
+    const void* __restrict__ index,
+    T* __restrict__ out,
+    T value) {
+  for (int64_t point =
+           static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x;
+       point < points;
+       point += static_cast<int64_t>(gridDim.x) * blockDim.x) {
+    int64_t linear = point;
+    int64_t index_offset = 0;
+    int64_t out_offset = 0;
+    for (int d = plan.ndim - 1; d >= 0; --d) {
+      const int64_t coordinate = linear % plan.sizes[d];
+      linear /= plan.sizes[d];
+      index_offset += coordinate * plan.index_strides[d];
+      if (d != plan.dim) {
+        out_offset += coordinate * plan.out_strides[d];
+      }
+    }
+    const int64_t position = plan.index_is_int32
+        ? static_cast<const int32_t*>(index)[index_offset]
+        : static_cast<const int64_t*>(index)[index_offset];
+    // As in ATen's default CUDA kernel, a negative index is out of range, not
+    // counted from the end.
+    CUDA_KERNEL_ASSERT_MSG(
+        position >= 0 && position < plan.dim_size, "index out of bounds");
+    out[out_offset + position * plan.out_strides[plan.dim]] = value;
+  }
+}
+
 // As ATen's safe_max and safe_min, a NaN on either side wins.
 template <typename AccT>
 __device__ __forceinline__ AccT
@@ -1181,7 +1217,8 @@ Error scatter_reduce(
 }
 
 // Runs the scatter shim called `name`, with the checks ATen applies to
-// aten::scatter and aten::scatter_reduce.
+// aten::scatter and aten::scatter_reduce. With a `scalar`, src is unused and
+// the shim assigns that value instead (aten::scatter.value).
 Error scatter(
     const char* name,
     Tensor* out,
@@ -1190,9 +1227,11 @@ Error scatter(
     Tensor* index,
     Tensor* src,
     Reduction reduction,
-    bool include_self) {
+    bool include_self,
+    const double* scalar = nullptr) {
+  const bool from_scalar = scalar != nullptr;
   ET_CHECK_OR_RETURN_ERROR(
-      out != nullptr && index != nullptr && src != nullptr,
+      out != nullptr && index != nullptr && (from_scalar || src != nullptr),
       InvalidArgument,
       "%s: null argument",
       name);
@@ -1202,12 +1241,12 @@ Error scatter(
       "%s: out must be self, as AOTInductor calls it",
       name);
   ET_CHECK_OR_RETURN_ERROR(
-      out->is_cuda() && index->is_cuda() && src->is_cuda(),
+      out->is_cuda() && index->is_cuda() && (from_scalar || src->is_cuda()),
       NotSupported,
       "%s: tensors must be on the CUDA device",
       name);
   ET_CHECK_OR_RETURN_ERROR(
-      src->dtype() == out->dtype(),
+      from_scalar || src->dtype() == out->dtype(),
       InvalidArgument,
       "%s: src and self must have the same dtype",
       name);
@@ -1242,7 +1281,7 @@ Error scatter(
       name);
   ET_CHECK_OR_RETURN_ERROR(
       std::max<int64_t>(index->dim(), 1) == ndim &&
-          std::max<int64_t>(src->dim(), 1) == ndim,
+          (from_scalar || std::max<int64_t>(src->dim(), 1) == ndim),
       InvalidArgument,
       "%s: index and src must have as many dims as self",
       name);
@@ -1263,7 +1302,8 @@ Error scatter(
         std::max<int64_t>(size(out, d) - 1, 0) * stride(out, d);
     const int64_t index_size = size(index, d);
     ET_CHECK_OR_RETURN_ERROR(
-        index_size <= size(src, d) && (d == dim || index_size <= size(out, d)),
+        (from_scalar || index_size <= size(src, d)) &&
+            (d == dim || index_size <= size(out, d)),
         InvalidArgument,
         "%s: index is larger than src, or than self, at dim %" PRId64,
         name,
@@ -1271,7 +1311,7 @@ Error scatter(
     plan.sizes[d] = index_size;
     plan.index_strides[d] = stride(index, d);
     plan.out_strides[d] = stride(out, d);
-    plan.src_strides[d] = stride(src, d);
+    plan.src_strides[d] = from_scalar ? 0 : stride(src, d);
     points *= index_size;
   }
 
@@ -1284,6 +1324,16 @@ Error scatter(
   auto run = [&](auto value, auto accumulator) {
     using T = decltype(value);
     using AccT = decltype(accumulator);
+    if (from_scalar) {
+      scatter_value_kernel<T><<<grid_size(points), kThreads, 0, stream>>>(
+          plan,
+          points,
+          index->data_ptr(),
+          static_cast<T*>(out->data_ptr()),
+          static_cast<T>(static_cast<AccT>(*scalar)));
+      ET_CUDA_KERNEL_LAUNCH_CHECK_OR_RETURN_ERROR();
+      return Error::Ok;
+    }
     return scatter_reduce<T, AccT>(
         name,
         plan,
@@ -1596,6 +1646,24 @@ AOTITorchError aoti_torch_cuda_scatter_src_out(
       src,
       Reduction::Assign,
       /*include_self=*/false);
+}
+
+AOTITorchError aoti_torch_cuda_scatter_value_out(
+    Tensor* out,
+    Tensor* self,
+    int64_t dim,
+    Tensor* index,
+    double value) {
+  return scatter(
+      "aoti_torch_cuda_scatter_value_out",
+      out,
+      self,
+      dim,
+      index,
+      /*src=*/nullptr,
+      Reduction::Assign,
+      /*include_self=*/false,
+      &value);
 }
 
 AOTITorchError aoti_torch_cuda_scatter_reduce_two_out(

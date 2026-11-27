@@ -105,6 +105,32 @@ AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_scatter_src_out(
     Tensor* src);
 
 /**
+ * Writes value into out at index along dim, with the semantics of
+ * aten::scatter.value.
+ *
+ * Inductor calls this fallback, with out and self the same tensor, for a
+ * scalar source in deterministic mode. Every write stores the same value, so
+ * the result is deterministic without ordering the writes. As in ATen's
+ * default CUDA kernel, an index out of range, negative ones included,
+ * triggers a device-side assert.
+ *
+ * @param out Tensor to update (CUDA device, up to 16 dims)
+ * @param self Must be out; AOTInductor passes the tensor it updates as both
+ * @param dim Dimension of out that index addresses
+ * @param index int64 or int32 tensor with as many dims as out. In every dim
+ * but dim it is no larger than out
+ * @param value Value to write, converted to the dtype of out. Float, double,
+ * half, bfloat16, the integer dtypes and bool are supported.
+ * @return AOTITorchError
+ */
+AOTI_SHIM_EXPORT AOTITorchError aoti_torch_cuda_scatter_value_out(
+    Tensor* out,
+    Tensor* self,
+    int64_t dim,
+    Tensor* index,
+    double value);
+
+/**
  * Reduces src into out at index along dim, with the semantics of
  * aten::scatter_reduce.two.
  *
