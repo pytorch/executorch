@@ -47,6 +47,7 @@ from torchao.quantization.pt2e.quantize_pt2e import (
 )
 from torchao.quantization.pt2e.quantizer import ComposableQuantizer, Quantizer
 from torchao.quantization.pt2e.quantizer.embedding_quantizer import EmbeddingQuantizer
+from torchao.quantization.utils import compute_error
 from torchao.testing.pt2e.utils import (
     PT2ENumericDebuggerTestCase,
     PT2EQuantizationTestCase,
@@ -718,6 +719,102 @@ class TestQuantizePT2E(PT2EQuantizationTestCase):
             loaded_quantized_model = loaded_ep.module()
             res = loaded_quantized_model(*example_inputs)
             self.assertEqual(ref_res, res)
+
+    def test_new_tensor_filled_in_place_through_view(self):
+        # torchvision's batch_images fills new_full with copy_. Observing the
+        # tensor before that write made the quantized model ignore its input.
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                buf = x.new_zeros(1, 3, 8, 8)
+                buf.select(0, 0).copy_(x)
+                return self.conv(buf)
+
+        torch.manual_seed(0)
+        eager = M().eval()
+        x = torch.randn(3, 8, 8)
+        m = export(eager, (x,), strict=True).module()
+        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
+        m = prepare_pt2e(m, quantizer)
+        self.checkGraphModuleNodes(
+            m,
+            expected_node_occurrence={
+                ns.call_function(torch.ops.aten.copy_.default): 0,
+                ns.call_function(torch.ops.aten.select_scatter.default): 1,
+            },
+        )
+        for _ in range(4):
+            m(torch.randn(3, 8, 8))
+        m = convert_pt2e(m)
+        self.checkGraphModuleNodes(
+            m,
+            expected_node_list=[
+                ns.call_function(torch.ops.aten.select_scatter.default),
+                ns.call_function(
+                    torch.ops.quantized_decomposed.quantize_per_tensor.default
+                ),
+                ns.call_function(
+                    torch.ops.quantized_decomposed.dequantize_per_tensor.default
+                ),
+                ns.call_function(torch.ops.aten.conv2d.default),
+            ],
+        )
+        self.assertGreater(compute_error(eager(x), m(x)).item(), 20)
+
+    def test_direct_in_place_scalar_op_is_kept(self):
+        # Rewriting mul_ to mul.Tensor would make transform_for_annotation lift
+        # the scalar into a quantized constant.
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = self.conv(x)
+                y.mul_(0.5)
+                return y
+
+        m = export(M().eval(), (torch.randn(1, 3, 8, 8),), strict=True).module()
+        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
+        m = prepare_pt2e(m, quantizer)
+        self.checkGraphModuleNodes(
+            m,
+            expected_node_occurrence={
+                ns.call_function(torch.ops.aten.mul_.Tensor): 1,
+                ns.call_function(torch.ops.aten.mul.Tensor): 0,
+            },
+        )
+
+    def test_scalar_write_through_view_is_not_lifted(self):
+        class M(torch.nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.conv = torch.nn.Conv2d(3, 3, 3)
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                y = self.conv(x)
+                y.select(1, 0).mul_(0.5)
+                return y
+
+        m = export(M().eval(), (torch.randn(1, 3, 8, 8),), strict=True).module()
+        quantizer = XNNPACKQuantizer().set_global(get_symmetric_quantization_config())
+        m = prepare_pt2e(m, quantizer)
+        self.checkGraphModuleNodes(
+            m,
+            expected_node_occurrence={
+                ns.call_function(torch.ops.aten.mul.Scalar): 1,
+                ns.call_function(torch.ops.aten.mul.Tensor): 0,
+            },
+        )
+        self.assertFalse(
+            any(
+                n.op == "get_attr" and "_tensor_constant" in n.target
+                for n in m.graph.nodes
+            )
+        )
 
 
 instantiate_parametrized_tests(TestQuantizePT2E)
