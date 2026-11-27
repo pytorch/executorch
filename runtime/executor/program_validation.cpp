@@ -205,6 +205,19 @@ validate_program(const executorch_flatbuffer::Program* program) {
             return Error::InvalidProgram;
           }
 
+          // TensorList items must reference previously constructed EValues.
+          if (static_cast<flatbuffers::uoffset_t>(evalue_index) >= value_idx) {
+            ET_LOG(
+                Error,
+                "TensorList at index %u item %u has non-preceding index %d in "
+                "execution plan %u",
+                static_cast<unsigned>(value_idx),
+                static_cast<unsigned>(item_idx),
+                static_cast<int>(evalue_index),
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+
           // Check that the referenced evalue is actually a Tensor.
           const auto* referenced_value = values->Get(evalue_index);
           if (referenced_value == nullptr) {
@@ -226,6 +239,91 @@ validate_program(const executorch_flatbuffer::Program* program) {
                 "index %d in execution plan %u",
                 static_cast<unsigned>(item_idx),
                 static_cast<int>(referenced_value->val_type()),
+                static_cast<int>(evalue_index),
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+        }
+      }
+
+      // Check if this value is an OptionalTensorList.
+      if (value->val_type() ==
+          executorch_flatbuffer::KernelTypes::OptionalTensorList) {
+        const auto* opt_tensor_list =
+            static_cast<const executorch_flatbuffer::OptionalTensorList*>(
+                value->val());
+
+        if (opt_tensor_list == nullptr) {
+          ET_LOG(
+              Error,
+              "OptionalTensorList is null for value %u in execution plan %u",
+              static_cast<unsigned>(value_idx),
+              static_cast<unsigned>(plan_idx));
+          return Error::InvalidProgram;
+        }
+
+        const auto* items = opt_tensor_list->items();
+        if (items == nullptr) {
+          ET_LOG(Error, "OptionalTensorList items is null");
+          return Error::InvalidProgram;
+        }
+
+        // Validate that each item index is -1 (absent) or points to a
+        // preceding Tensor or Null evalue.
+        for (flatbuffers::uoffset_t item_idx = 0; item_idx < items->size();
+             item_idx++) {
+          int32_t evalue_index = items->Get(item_idx);
+          if (evalue_index == -1) {
+            continue;
+          }
+
+          if (evalue_index < 0 ||
+              static_cast<flatbuffers::uoffset_t>(evalue_index) >=
+                  values->size()) {
+            ET_LOG(
+                Error,
+                "OptionalTensorList item %u has out-of-bounds index %d (values "
+                "size %u) in execution plan %u",
+                static_cast<unsigned>(item_idx),
+                static_cast<int>(evalue_index),
+                static_cast<unsigned>(values->size()),
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+
+          if (static_cast<flatbuffers::uoffset_t>(evalue_index) >= value_idx) {
+            ET_LOG(
+                Error,
+                "OptionalTensorList at index %u item %u has non-preceding "
+                "index %d in execution plan %u",
+                static_cast<unsigned>(value_idx),
+                static_cast<unsigned>(item_idx),
+                static_cast<int>(evalue_index),
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+
+          const auto* referenced_value = values->Get(evalue_index);
+          if (referenced_value == nullptr) {
+            ET_LOG(
+                Error,
+                "OptionalTensorList item %u references null evalue at index %d "
+                "in execution plan %u",
+                static_cast<unsigned>(item_idx),
+                static_cast<int>(evalue_index),
+                static_cast<unsigned>(plan_idx));
+            return Error::InvalidProgram;
+          }
+
+          const auto ref_type = referenced_value->val_type();
+          if (ref_type != executorch_flatbuffer::KernelTypes::Tensor &&
+              ref_type != executorch_flatbuffer::KernelTypes::Null) {
+            ET_LOG(
+                Error,
+                "OptionalTensorList item %u references invalid evalue (type "
+                "%d) at index %d in execution plan %u",
+                static_cast<unsigned>(item_idx),
+                static_cast<int>(ref_type),
                 static_cast<int>(evalue_index),
                 static_cast<unsigned>(plan_idx));
             return Error::InvalidProgram;

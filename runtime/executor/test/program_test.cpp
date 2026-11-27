@@ -15,11 +15,16 @@
 
 #include <cstring>
 #include <memory>
+#include <string>
+#include <vector>
 
 #include <executorch/extension/data_loader/buffer_data_loader.h>
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/runtime/backend/interface.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
+#include <executorch/runtime/executor/memory_manager.h>
+#include <executorch/runtime/executor/method.h>
 #include <executorch/runtime/platform/runtime.h>
 #include <executorch/schema/program_generated.h>
 #include <executorch/test/utils/DeathTest.h>
@@ -1216,3 +1221,526 @@ TEST_F(ProgramTest, GetConstantBufferDataRejectsOversizedRequest) {
   EXPECT_EQ(data.error(), Error::InvalidArgument);
 }
 #endif // ET_ENABLE_DEPRECATED_CONSTANT_BUFFER
+
+namespace {
+
+constexpr const char* kCompileSpecTestBackendId = "CompileSpecTestBackend";
+
+class CompileSpecTestBackend final
+    : public executorch::runtime::BackendInterface {
+ public:
+  bool is_available() const override {
+    return true;
+  }
+
+  Result<executorch::runtime::DelegateHandle*> init(
+      executorch::runtime::BackendInitContext&,
+      FreeableBuffer*,
+      executorch::aten::ArrayRef<executorch::runtime::CompileSpec>
+          compile_specs) const override {
+    for (const auto& spec : compile_specs) {
+      if (spec.key == nullptr) {
+        return Error::InvalidProgram;
+      }
+      if (spec.value.nbytes > 0 && spec.value.buffer == nullptr) {
+        return Error::InvalidProgram;
+      }
+    }
+    return reinterpret_cast<executorch::runtime::DelegateHandle*>(
+        &handle_token_);
+  }
+
+  Error execute(
+      executorch::runtime::BackendExecutionContext&,
+      executorch::runtime::DelegateHandle*,
+      executorch::runtime::Span<executorch::runtime::EValue*>) const override {
+    return Error::Ok;
+  }
+
+ private:
+  mutable int handle_token_ = 1;
+};
+
+Error ensure_compile_spec_test_backend_registered() {
+  static CompileSpecTestBackend backend;
+  if (executorch::runtime::get_backend_class(kCompileSpecTestBackendId) ==
+      nullptr) {
+    return executorch::runtime::register_backend(
+        {kCompileSpecTestBackendId, &backend});
+  }
+  return Error::Ok;
+}
+
+enum class TestEValueKind {
+  Null,
+  Int,
+  Tensor,
+  TensorList,
+  OptionalTensorList,
+};
+
+struct TestEValueSpec {
+  TestEValueKind kind;
+  std::vector<int32_t> items = {};
+  bool has_items = true;
+};
+
+struct TestCompileSpecEntry {
+  bool has_key = true;
+  std::string key = "";
+  bool has_value = true;
+  std::vector<uint8_t> value = {};
+};
+
+class AlignedProgramBuffer final {
+ public:
+  explicit AlignedProgramBuffer(const flatbuffers::FlatBufferBuilder& builder)
+      : storage_(builder.GetSize() + 16), size_(builder.GetSize()) {
+    uintptr_t raw = reinterpret_cast<uintptr_t>(storage_.data());
+    uintptr_t aligned = (raw + uintptr_t{15}) & ~uintptr_t{15};
+    aligned_ptr_ = reinterpret_cast<uint8_t*>(aligned);
+    std::memcpy(aligned_ptr_, builder.GetBufferPointer(), size_);
+  }
+
+  BufferDataLoader loader() const {
+    return BufferDataLoader(aligned_ptr_, size_);
+  }
+
+ private:
+  std::vector<uint8_t> storage_;
+  uint8_t* aligned_ptr_ = nullptr;
+  size_t size_ = 0;
+};
+
+AlignedProgramBuffer build_list_and_delegate_test_program(
+    const std::vector<TestEValueSpec>& values_spec,
+    const std::vector<TestCompileSpecEntry>* delegate_specs = nullptr) {
+  flatbuffers::FlatBufferBuilder builder(2048);
+
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::EValue>> evalues;
+  evalues.reserve(values_spec.size());
+  for (const auto& spec : values_spec) {
+    switch (spec.kind) {
+      case TestEValueKind::Null: {
+        auto null_val = executorch_flatbuffer::CreateNull(builder);
+        evalues.push_back(
+            executorch_flatbuffer::CreateEValue(
+                builder,
+                executorch_flatbuffer::KernelTypes::Null,
+                null_val.Union()));
+        break;
+      }
+      case TestEValueKind::Int: {
+        auto int_val = executorch_flatbuffer::CreateInt(builder, 99);
+        evalues.push_back(
+            executorch_flatbuffer::CreateEValue(
+                builder,
+                executorch_flatbuffer::KernelTypes::Int,
+                int_val.Union()));
+        break;
+      }
+      case TestEValueKind::Tensor: {
+        auto sizes = builder.CreateVector(std::vector<int32_t>{2});
+        auto dim_order = builder.CreateVector(std::vector<uint8_t>{0});
+        auto tensor = executorch_flatbuffer::CreateTensor(
+            builder,
+            executorch_flatbuffer::ScalarType::FLOAT,
+            /*storage_offset=*/0,
+            sizes,
+            dim_order,
+            /*requires_grad=*/false,
+            /*data_buffer_idx=*/0,
+            /*allocation_info=*/0,
+            /*layout=*/0,
+            executorch_flatbuffer::TensorShapeDynamism::STATIC,
+            /*extra_tensor_info=*/0);
+        evalues.push_back(
+            executorch_flatbuffer::CreateEValue(
+                builder,
+                executorch_flatbuffer::KernelTypes::Tensor,
+                tensor.Union()));
+        break;
+      }
+      case TestEValueKind::TensorList: {
+        flatbuffers::Offset<flatbuffers::Vector<int32_t>> items_off =
+            spec.has_items ? builder.CreateVector(spec.items) : 0;
+        auto list_val =
+            executorch_flatbuffer::CreateTensorList(builder, items_off);
+        evalues.push_back(
+            executorch_flatbuffer::CreateEValue(
+                builder,
+                executorch_flatbuffer::KernelTypes::TensorList,
+                list_val.Union()));
+        break;
+      }
+      case TestEValueKind::OptionalTensorList: {
+        flatbuffers::Offset<flatbuffers::Vector<int32_t>> items_off =
+            spec.has_items ? builder.CreateVector(spec.items) : 0;
+        auto list_val =
+            executorch_flatbuffer::CreateOptionalTensorList(builder, items_off);
+        evalues.push_back(
+            executorch_flatbuffer::CreateEValue(
+                builder,
+                executorch_flatbuffer::KernelTypes::OptionalTensorList,
+                list_val.Union()));
+        break;
+      }
+    }
+  }
+
+  auto empty_instructions = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Instruction>>{});
+  auto chain = executorch_flatbuffer::CreateChain(
+      builder,
+      builder.CreateVector(std::vector<int32_t>{}),
+      builder.CreateVector(std::vector<int32_t>{}),
+      empty_instructions);
+  auto chains = builder.CreateVector(
+      std::vector<flatbuffers::Offset<executorch_flatbuffer::Chain>>{chain});
+
+  std::vector<flatbuffers::Offset<executorch_flatbuffer::BackendDelegate>>
+      delegates_vec;
+  std::vector<
+      flatbuffers::Offset<executorch_flatbuffer::BackendDelegateInlineData>>
+      inline_data_vec;
+  if (delegate_specs != nullptr) {
+    std::vector<flatbuffers::Offset<executorch_flatbuffer::CompileSpec>>
+        fb_specs;
+    fb_specs.reserve(delegate_specs->size());
+    for (const auto& cs : *delegate_specs) {
+      flatbuffers::Offset<flatbuffers::String> key_off =
+          cs.has_key ? builder.CreateString(cs.key) : 0;
+      flatbuffers::Offset<flatbuffers::Vector<uint8_t>> val_off =
+          cs.has_value ? builder.CreateVector(cs.value) : 0;
+      fb_specs.push_back(
+          executorch_flatbuffer::CreateCompileSpec(builder, key_off, val_off));
+    }
+    auto data_ref = executorch_flatbuffer::CreateBackendDelegateDataReference(
+        builder, executorch_flatbuffer::DataLocation::INLINE, /*index=*/0);
+    delegates_vec.push_back(
+        executorch_flatbuffer::CreateBackendDelegate(
+            builder,
+            builder.CreateString(kCompileSpecTestBackendId),
+            data_ref,
+            builder.CreateVector(fb_specs)));
+    inline_data_vec.push_back(
+        executorch_flatbuffer::CreateBackendDelegateInlineData(
+            builder, builder.CreateVector(std::vector<uint8_t>{0x01, 0x02})));
+  }
+
+  auto plan = executorch_flatbuffer::CreateExecutionPlan(
+      builder,
+      builder.CreateString("forward"),
+      /*container_meta_type=*/0,
+      builder.CreateVector(evalues),
+      /*inputs=*/builder.CreateVector(std::vector<int32_t>{}),
+      /*outputs=*/builder.CreateVector(std::vector<int32_t>{}),
+      chains,
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Operator>>{}),
+      builder.CreateVector(delegates_vec),
+      /*non_const_buffer_sizes=*/
+      builder.CreateVector(std::vector<int64_t>{}));
+
+  auto constant_segment = executorch_flatbuffer::CreateSubsegmentOffsets(
+      builder,
+      /*segment_index=*/0,
+      builder.CreateVector(std::vector<uint64_t>{0}));
+
+  auto program = executorch_flatbuffer::CreateProgram(
+      builder,
+      /*version=*/0,
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::ExecutionPlan>>{plan}),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<executorch_flatbuffer::Buffer>>{}),
+      builder.CreateVector(inline_data_vec),
+      builder.CreateVector(
+          std::vector<
+              flatbuffers::Offset<executorch_flatbuffer::DataSegment>>{}),
+      constant_segment);
+
+  builder.Finish(program, executorch_flatbuffer::ProgramIdentifier());
+  return AlignedProgramBuffer(builder);
+}
+
+} // namespace
+
+TEST_F(ProgramTest, ValidTopologicalListsAndCompileSpecsSucceed) {
+  ASSERT_EQ(ensure_compile_spec_test_backend_registered(), Error::Ok);
+
+  std::vector<TestCompileSpecEntry> specs = {
+      {/*has_key=*/true, "precision", /*has_value=*/true, {1, 2, 3, 4}},
+      {/*has_key=*/true, "", /*has_value=*/true, {}},
+  };
+  AlignedProgramBuffer buf = build_list_and_delegate_test_program(
+      {
+          {TestEValueKind::Tensor},
+          {TestEValueKind::Null},
+          {TestEValueKind::TensorList, {0}},
+          {TestEValueKind::OptionalTensorList, {-1, 0, 1}},
+      },
+      &specs);
+  BufferDataLoader loader = buf.loader();
+
+  Result<Program> program =
+      Program::load(&loader, Program::Verification::InternalConsistency);
+  ASSERT_EQ(program.error(), Error::Ok);
+
+  alignas(64) uint8_t method_buf[16 * 1024] = {};
+  executorch::runtime::MemoryAllocator method_allocator(
+      sizeof(method_buf), method_buf);
+  executorch::runtime::MemoryManager memory_manager(&method_allocator);
+
+  Result<executorch::runtime::Method> method =
+      program->load_method("forward", &memory_manager);
+  EXPECT_EQ(method.error(), Error::Ok);
+}
+
+#if ET_ENABLE_PROGRAM_VERIFICATION
+TEST_F(ProgramTest, ValidateProgramRejectsForwardAndSelfReferencedTensorList) {
+  {
+    AlignedProgramBuffer forward_ref = build_list_and_delegate_test_program({
+        {TestEValueKind::TensorList, {1}},
+        {TestEValueKind::Tensor},
+    });
+    BufferDataLoader loader = forward_ref.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+  {
+    AlignedProgramBuffer self_ref = build_list_and_delegate_test_program({
+        {TestEValueKind::TensorList, {0}},
+    });
+    BufferDataLoader loader = self_ref.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+  {
+    AlignedProgramBuffer partial_forward_ref =
+        build_list_and_delegate_test_program({
+            {TestEValueKind::Tensor},
+            {TestEValueKind::TensorList, {0, 2}},
+            {TestEValueKind::Tensor},
+        });
+    BufferDataLoader loader = partial_forward_ref.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+}
+
+TEST_F(ProgramTest, ValidateProgramRejectsInvalidOptionalTensorListItems) {
+  {
+    AlignedProgramBuffer forward_ref = build_list_and_delegate_test_program({
+        {TestEValueKind::OptionalTensorList, {1}},
+        {TestEValueKind::Tensor},
+    });
+    BufferDataLoader loader = forward_ref.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+  {
+    AlignedProgramBuffer self_ref = build_list_and_delegate_test_program({
+        {TestEValueKind::OptionalTensorList, {0}},
+    });
+    BufferDataLoader loader = self_ref.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+  {
+    AlignedProgramBuffer oob_pos = build_list_and_delegate_test_program({
+        {TestEValueKind::Tensor},
+        {TestEValueKind::OptionalTensorList, {-1, 99}},
+    });
+    BufferDataLoader loader = oob_pos.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+  {
+    AlignedProgramBuffer oob_neg = build_list_and_delegate_test_program({
+        {TestEValueKind::Tensor},
+        {TestEValueKind::OptionalTensorList, {-2}},
+    });
+    BufferDataLoader loader = oob_neg.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+  {
+    AlignedProgramBuffer wrong_type = build_list_and_delegate_test_program({
+        {TestEValueKind::Int},
+        {TestEValueKind::OptionalTensorList, {0}},
+    });
+    BufferDataLoader loader = wrong_type.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+  {
+    AlignedProgramBuffer missing_items = build_list_and_delegate_test_program({
+        {TestEValueKind::OptionalTensorList, {}, /*has_items=*/false},
+    });
+    BufferDataLoader loader = missing_items.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::InternalConsistency);
+    EXPECT_EQ(program.error(), Error::InvalidProgram);
+  }
+}
+
+#endif // ET_ENABLE_PROGRAM_VERIFICATION
+
+TEST_F(
+    ProgramTest,
+    LoadMethodMinimalVerificationRejectsForwardReferencedTensorLists) {
+  alignas(64) uint8_t reused_buf[16 * 1024] = {};
+  executorch::runtime::MemoryAllocator reused_allocator(
+      sizeof(reused_buf), reused_buf);
+  executorch::runtime::MemoryManager reused_mm(&reused_allocator);
+
+  // Seed the arena with a valid 2-Tensor Method, then destroy and reset it so
+  // unconstructed EValue slots contain stale Tag::Tensor tags on reuse.
+  {
+    AlignedProgramBuffer seed = build_list_and_delegate_test_program({
+        {TestEValueKind::Tensor},
+        {TestEValueKind::Tensor},
+    });
+    BufferDataLoader seed_loader = seed.loader();
+    Result<Program> seed_prog =
+        Program::load(&seed_loader, Program::Verification::Minimal);
+    ASSERT_EQ(seed_prog.error(), Error::Ok);
+    Result<executorch::runtime::Method> seed_method =
+        seed_prog->load_method("forward", &reused_mm);
+    ASSERT_EQ(seed_method.error(), Error::Ok);
+  }
+  reused_allocator.reset();
+
+  // Forward-referenced TensorList([1]) at index 0 must be rejected even when
+  // Minimal verification skips validate_program() and values_[1] holds stale
+  // Tag::Tensor bytes in the reused allocator arena.
+  {
+    AlignedProgramBuffer forward_tl = build_list_and_delegate_test_program({
+        {TestEValueKind::TensorList, {1}},
+        {TestEValueKind::Int},
+    });
+    BufferDataLoader loader = forward_tl.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::Minimal);
+    ASSERT_EQ(program.error(), Error::Ok);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &reused_mm);
+    EXPECT_EQ(method.error(), Error::InvalidProgram);
+  }
+
+  // Re-seed 1 Tensor slot and verify self-reference TensorList([0]) is
+  // rejected.
+  reused_allocator.reset();
+  {
+    AlignedProgramBuffer seed1 = build_list_and_delegate_test_program({
+        {TestEValueKind::Tensor},
+    });
+    BufferDataLoader seed_loader = seed1.loader();
+    Result<Program> seed_prog =
+        Program::load(&seed_loader, Program::Verification::Minimal);
+    ASSERT_EQ(seed_prog.error(), Error::Ok);
+    Result<executorch::runtime::Method> seed_method =
+        seed_prog->load_method("forward", &reused_mm);
+    ASSERT_EQ(seed_method.error(), Error::Ok);
+  }
+  reused_allocator.reset();
+  {
+    AlignedProgramBuffer self_tl = build_list_and_delegate_test_program({
+        {TestEValueKind::TensorList, {0}},
+    });
+    BufferDataLoader loader = self_tl.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::Minimal);
+    ASSERT_EQ(program.error(), Error::Ok);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &reused_mm);
+    EXPECT_EQ(method.error(), Error::InvalidProgram);
+  }
+
+  // Forward-referenced and self-referenced OptionalTensorList must also be
+  // rejected on a zeroed arena (where unconstructed EValues look like
+  // Tag::None == 0).
+  alignas(64) uint8_t clean_buf[16 * 1024] = {};
+  executorch::runtime::MemoryAllocator clean_allocator(
+      sizeof(clean_buf), clean_buf);
+  executorch::runtime::MemoryManager clean_mm(&clean_allocator);
+  {
+    AlignedProgramBuffer forward_otl = build_list_and_delegate_test_program({
+        {TestEValueKind::OptionalTensorList, {1}},
+        {TestEValueKind::Int},
+    });
+    BufferDataLoader loader = forward_otl.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::Minimal);
+    ASSERT_EQ(program.error(), Error::Ok);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &clean_mm);
+    EXPECT_EQ(method.error(), Error::InvalidProgram);
+  }
+  clean_allocator.reset();
+  {
+    AlignedProgramBuffer self_otl = build_list_and_delegate_test_program({
+        {TestEValueKind::OptionalTensorList, {0}},
+    });
+    BufferDataLoader loader = self_otl.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::Minimal);
+    ASSERT_EQ(program.error(), Error::Ok);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &clean_mm);
+    EXPECT_EQ(method.error(), Error::InvalidProgram);
+  }
+}
+
+TEST_F(ProgramTest, LoadMethodRejectsCompileSpecWithNullKeyOrValue) {
+  ASSERT_EQ(ensure_compile_spec_test_backend_registered(), Error::Ok);
+
+  {
+    std::vector<TestCompileSpecEntry> null_key_specs = {
+        {/*has_key=*/false, "", /*has_value=*/true, {1, 2}},
+    };
+    AlignedProgramBuffer buf =
+        build_list_and_delegate_test_program({}, &null_key_specs);
+    BufferDataLoader loader = buf.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::Minimal);
+    ASSERT_EQ(program.error(), Error::Ok);
+
+    alignas(64) uint8_t method_buf[16 * 1024] = {};
+    executorch::runtime::MemoryAllocator method_allocator(
+        sizeof(method_buf), method_buf);
+    executorch::runtime::MemoryManager memory_manager(&method_allocator);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &memory_manager);
+    EXPECT_EQ(method.error(), Error::InvalidProgram);
+  }
+  {
+    std::vector<TestCompileSpecEntry> null_value_specs = {
+        {/*has_key=*/true, "precision", /*has_value=*/false, {}},
+    };
+    AlignedProgramBuffer buf =
+        build_list_and_delegate_test_program({}, &null_value_specs);
+    BufferDataLoader loader = buf.loader();
+    Result<Program> program =
+        Program::load(&loader, Program::Verification::Minimal);
+    ASSERT_EQ(program.error(), Error::Ok);
+
+    alignas(64) uint8_t method_buf[16 * 1024] = {};
+    executorch::runtime::MemoryAllocator method_allocator(
+        sizeof(method_buf), method_buf);
+    executorch::runtime::MemoryManager memory_manager(&method_allocator);
+    Result<executorch::runtime::Method> method =
+        program->load_method("forward", &memory_manager);
+    EXPECT_EQ(method.error(), Error::InvalidProgram);
+  }
+}
