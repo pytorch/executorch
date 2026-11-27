@@ -29,7 +29,7 @@ TORCH_VERSION = runpy.run_path(
 TORCH_URL_BASE = "https://download.pytorch.org/whl/test"
 TORCHAO_URL_BASE = "https://download.pytorch.org/whl/nightly"
 TORCHAO_STABLE_VERSION = "0.18.0"
-TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261118"
+TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20261122"
 # Newest rocm7.2 TorchAO nightly with compiled kernels (cp310-abi3); later ROCm nightlies
 # are py3-none-any only, and none are published after 0.19.0.dev20260831.
 ROCM_TORCHAO_NIGHTLY_VERSION = "0.19.0.dev20260805"
