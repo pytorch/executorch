@@ -79,6 +79,8 @@ def define_common_targets():
             "//executorch/codegen/tools/...",
             "//executorch/runtime/executor/...",
             "//executorch/backends/native/extension/module/...",
+            # For the cache file guard in XNNWeightsCache.cpp.
+            "//executorch/backends/xnnpack/...",
             # Tests have a set up which uses raw flatbuffer.
             # TODO will refactor these setup steps into
             # testing utils in runtime/executor/... path

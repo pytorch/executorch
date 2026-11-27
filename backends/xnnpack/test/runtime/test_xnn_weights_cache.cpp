@@ -7,10 +7,13 @@
  */
 
 #include <executorch/backends/xnnpack/runtime/XNNWeightsCache.h>
+#include <executorch/backends/xnnpack/runtime/XNNWeightsCacheManager.h>
 
 #include <executorch/runtime/executor/pte_data_map.h>
 
 #include <executorch/extension/data_loader/file_data_loader.h>
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_generated.h>
+#include <executorch/extension/flat_tensor/serialize/flat_tensor_header.h>
 #include <executorch/extension/testing_util/temp_file.h>
 #include <executorch/runtime/core/error.h>
 #include <executorch/runtime/core/result.h>
@@ -18,11 +21,17 @@
 #include <executorch/schema/program_generated.h>
 #include <fcntl.h>
 #include <gtest/gtest.h>
+#include <sys/file.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 #include <xnnpack.h>
+#include <algorithm>
 #include <atomic>
+#include <cerrno>
+#include <cstring>
 #include <fstream>
+#include <iterator>
 #include <mutex>
 #include <thread>
 
@@ -251,6 +260,23 @@ class XNNWeightsCacheTest : public ::testing::Test {
         input.data(),
         output.data());
     ASSERT_EQ(cache.save_packed_index(), Error::Ok);
+  }
+
+  // Packs and runs the test graph through a cache the caller has initialized.
+  void PackAndRun(XNNWeightsCache& cache) {
+    const std::vector<size_t> batches{1, 2, 3};
+    const size_t num_batches = 1 * 2 * 3;
+    const size_t padding = 32;
+    std::vector<float> input(
+        num_batches * kLaunchInputChannels + padding, 1.0f);
+    std::vector<float> output(num_batches * kLaunchOutputChannels, 0.0f);
+    BuildAndRunGraphWithWeightsCache(
+        cache,
+        batches,
+        kLaunchInputChannels,
+        kLaunchOutputChannels,
+        input.data(),
+        output.data());
   }
 
   static constexpr size_t kLaunchInputChannels = 3;
@@ -1236,6 +1262,782 @@ TEST_F(XNNWeightsCacheTest, ConcurrentOptionsAndSave_NoCrash_FileStable) {
   EXPECT_EQ(st_after.st_size, st_baseline.st_size);
 
   ::unlink(cache_path.c_str());
+}
+
+namespace {
+
+std::vector<char> read_file(const std::string& path) {
+  std::ifstream f(path, std::ios::binary);
+  return std::vector<char>(
+      (std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+}
+
+void write_file(const std::string& path, const std::vector<char>& bytes) {
+  std::ofstream f(path, std::ios::binary | std::ios::trunc);
+  f.write(bytes.data(), bytes.size());
+}
+
+// A program flatbuffer with the given file identifier, padded to `size` the
+// way segments follow it in a real .pte.
+std::vector<char> program_file(const char* identifier, size_t size) {
+  flatbuffers::FlatBufferBuilder fbb;
+  fbb.Finish(
+      executorch_flatbuffer::CreateProgram(fbb, /*version=*/0), identifier);
+  std::vector<char> bytes(
+      reinterpret_cast<const char*>(fbb.GetBufferPointer()),
+      reinterpret_cast<const char*>(fbb.GetBufferPointer()) + fbb.GetSize());
+  bytes.resize(size, '\x5a');
+  return bytes;
+}
+
+void put_le32(char* dst, uint32_t value) {
+  for (int i = 0; i < 4; ++i) {
+    dst[i] = static_cast<char>((value >> (8 * i)) & 0xff);
+  }
+}
+
+// A file of `size` filler bytes whose head reads as the current program
+// version, with `root_offset` as its flatbuffer root offset.
+std::vector<char> leftover_with_head(size_t size, uint32_t root_offset) {
+  std::vector<char> bytes(size, '\x33');
+  put_le32(bytes.data(), root_offset);
+  std::memcpy(bytes.data() + 4, executorch_flatbuffer::ProgramIdentifier(), 4);
+  return bytes;
+}
+
+// The start of a .ptd file, from the flat tensor schema's own constants (the
+// cache spells them out): flatbuffer root offset, the file identifier, then
+// the flat tensor header magic at its offset. The root offset points past the
+// header's head bytes, as in a real .ptd, where the root table follows the
+// header.
+std::vector<char> data_file(size_t size) {
+  using executorch::extension::FlatTensorHeader;
+  std::vector<char> bytes(size, '\x5a');
+  put_le32(bytes.data(), FlatTensorHeader::kNumHeadBytes);
+  std::memcpy(
+      bytes.data() + 4, flat_tensor_flatbuffer::FlatTensorIdentifier(), 4);
+  std::memcpy(
+      bytes.data() + FlatTensorHeader::kHeaderOffset,
+      FlatTensorHeader::kMagic,
+      FlatTensorHeader::kMagicSize);
+  return bytes;
+}
+
+// Unlinks a temporary path when it goes out of scope, so a test that stops at
+// a fatal assertion still removes it. Also removes a leftover from an earlier
+// run up front.
+struct TempPath {
+  explicit TempPath(const std::string& name)
+      : path(
+            "/tmp/xnn_weights_cache_" + name + "_" +
+            std::to_string(::getpid())) {
+    ::unlink(path.c_str());
+  }
+  ~TempPath() {
+    ::unlink(path.c_str());
+  }
+  TempPath(const TempPath&) = delete;
+  TempPath& operator=(const TempPath&) = delete;
+  TempPath(TempPath&&) = delete;
+  TempPath& operator=(TempPath&&) = delete;
+
+  const std::string path;
+};
+
+// Closes a descriptor when it goes out of scope.
+struct ScopedFd {
+  explicit ScopedFd(int fd) : fd(fd) {}
+  ~ScopedFd() {
+    if (fd >= 0) {
+      ::close(fd);
+    }
+  }
+  ScopedFd(const ScopedFd&) = delete;
+  ScopedFd& operator=(const ScopedFd&) = delete;
+  ScopedFd(ScopedFd&&) = delete;
+  ScopedFd& operator=(ScopedFd&&) = delete;
+
+  const int fd;
+};
+
+// An ExecuTorch file at the cache path, mapped read-only the way the runtime
+// maps a loaded program. Reading through `map` would SIGBUS if the file were
+// cut. The mapping, descriptor and file are released when it goes out of
+// scope.
+struct MappedModel {
+  MappedModel(const std::string& name, std::vector<char> file_bytes)
+      : file(name + ".pte"), bytes(std::move(file_bytes)) {
+    write_file(file.path, bytes);
+    fd = ::open(file.path.c_str(), O_RDONLY);
+    if (fd >= 0) {
+      map = ::mmap(nullptr, bytes.size(), PROT_READ, MAP_SHARED, fd, 0);
+    }
+  }
+  // A current-version program.
+  explicit MappedModel(const std::string& name)
+      : MappedModel(
+            name,
+            program_file(
+                executorch_flatbuffer::ProgramIdentifier(),
+                64 * 1024)) {}
+  ~MappedModel() {
+    if (map != MAP_FAILED) {
+      ::munmap(map, bytes.size());
+    }
+    if (fd >= 0) {
+      ::close(fd);
+    }
+  }
+  MappedModel(const MappedModel&) = delete;
+  MappedModel& operator=(const MappedModel&) = delete;
+  MappedModel(MappedModel&&) = delete;
+  MappedModel& operator=(MappedModel&&) = delete;
+
+  TempPath file;
+  const std::string& path = file.path;
+  std::vector<char> bytes;
+  int fd = -1;
+  void* map = MAP_FAILED;
+};
+
+} // namespace
+
+// A cache path that names an ExecuTorch file must leave it byte for byte
+// unchanged, even while it is mapped (as a loaded model is), and packing falls
+// back to heap. Covers the current program version, another program version,
+// and a .ptd data file.
+TEST_F(XNNWeightsCacheTest, ExecuTorchFilesAtCachePathAreNeverModified) {
+  const struct {
+    const char* name;
+    std::vector<char> bytes;
+  } cases[] = {
+      {"program",
+       program_file(executorch_flatbuffer::ProgramIdentifier(), 64 * 1024)},
+      {"other_program_version", program_file("ET99", 64 * 1024)},
+      {"data", data_file(64 * 1024)},
+      {"root_at_loader_bound", leftover_with_head(64 * 1024, 64 * 1024 - 4)},
+  };
+  for (const auto& test_case : cases) {
+    MappedModel model(std::string("et_") + test_case.name, test_case.bytes);
+    ASSERT_NE(model.map, MAP_FAILED) << test_case.name;
+
+    std::vector<float> output;
+    RunLaunchWithCacheFile(model.path, output);
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(model.path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    EXPECT_EQ(
+        cache.stats().state,
+        executorch::backends::xnnpack::delegate::PackedCacheState::HeapFallback)
+        << test_case.name;
+    EXPECT_EQ(cache.stats().last_errno, EEXIST) << test_case.name;
+    ASSERT_EQ(read_file(model.path), test_case.bytes) << test_case.name;
+    // Reading through the mapping would SIGBUS if the file had been cut.
+    EXPECT_EQ(
+        std::memcmp(model.map, test_case.bytes.data(), test_case.bytes.size()),
+        0)
+        << test_case.name;
+  }
+}
+
+// Unchanged behavior: a file this cache left without a trailer (a process
+// killed before its first save leaves packs only) is rebuilt, and the rebuilt
+// cache loads on the next launch.
+TEST_F(XNNWeightsCacheTest, FooterlessLeftoverIsRebuilt) {
+  const TempPath file("leftover.packed_cache");
+  const std::string& path = file.path;
+  write_file(path, std::vector<char>(2 * 4096, '\x33'));
+
+  std::vector<float> output;
+  RunLaunchWithCacheFile(path, output);
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(path);
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  EXPECT_GT(cache.get_packed_data_names().size(), 0u);
+}
+
+// A leftover whose bytes 4-5 happen to read "ET" is not a program unless two
+// version digits follow, so it is still rebuilt.
+TEST_F(XNNWeightsCacheTest, LeftoverThatOnlyStartsLikeAProgramIsRebuilt) {
+  const TempPath file("etlike.packed_cache");
+  const std::string& path = file.path;
+  std::vector<char> leftover(2 * 4096, '\x33');
+  std::memcpy(leftover.data() + 4, "ETx1", 4);
+  write_file(path, leftover);
+
+  std::vector<float> output;
+  RunLaunchWithCacheFile(path, output);
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(path);
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  EXPECT_GT(cache.get_packed_data_names().size(), 0u);
+}
+
+// A leftover whose bytes 4-7 read like a program identifier is still rebuilt
+// when its root offset couldn't belong to a program the loader would accept:
+// inside the root offset and identifier, or with no room for the root table
+// inside the file. Packed weights left without a trailer usually look like
+// this.
+TEST_F(XNNWeightsCacheTest, LeftoverWithAnImpossibleRootOffsetIsRebuilt) {
+  constexpr size_t kSize = 2 * 4096;
+  const struct {
+    const char* name;
+    uint32_t root_offset;
+  } cases[] = {
+      {"zero", 0},
+      {"inside_identifier", 4},
+      {"past_bound", kSize - 3},
+      {"past_end", 0x7fffffff},
+  };
+  for (const auto& test_case : cases) {
+    const TempPath file(std::string("badroot_") + test_case.name);
+    write_file(file.path, leftover_with_head(kSize, test_case.root_offset));
+
+    std::vector<float> output;
+    RunLaunchWithCacheFile(file.path, output);
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(file.path);
+    cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+    EXPECT_GT(cache.get_packed_data_names().size(), 0u) << test_case.name;
+  }
+}
+
+// Unchanged behavior: any other file that fails the cache check is replaced
+// by a cache, as before. Only ExecuTorch program and data files are spared.
+TEST_F(XNNWeightsCacheTest, OtherFileFailingTheCheckIsReplaced) {
+  const TempPath file("other.packed_cache");
+  const std::string& path = file.path;
+  write_file(path, std::vector<char>(8192, '\xcc'));
+
+  std::vector<float> output;
+  RunLaunchWithCacheFile(path, output);
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(path);
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  EXPECT_GT(cache.get_packed_data_names().size(), 0u);
+}
+
+// Unchanged behavior: a file too short to hold a program or data file head is
+// rebuilt, even if its first bytes look like a program. The head is read until
+// end of file, so "short" here means the file really ends.
+TEST_F(XNNWeightsCacheTest, FileShorterThanAProgramHeadIsRebuilt) {
+  const TempPath file("tiny.packed_cache");
+  const std::string& path = file.path;
+  std::vector<char> tiny(11, '\x33');
+  std::memcpy(tiny.data() + 4, executorch_flatbuffer::ProgramIdentifier(), 4);
+  write_file(path, tiny);
+
+  std::vector<float> output;
+  RunLaunchWithCacheFile(path, output);
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(path);
+  cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get());
+  EXPECT_GT(cache.get_packed_data_names().size(), 0u);
+}
+
+// The first init refuses the model at the cache path and packs to heap. Those
+// heap entries stay in the instance, so the next init on the same instance
+// takes the branch that reopens the file for writing; a save after it must not
+// touch the model. (Before the refusal stuck, that reopen skipped the check
+// and the save cut the model to a 20 byte footer.)
+TEST_F(XNNWeightsCacheTest, ReinitAfterRefusalThenSaveLeavesTheModelUnchanged) {
+  MappedModel model("reinit_save");
+  ASSERT_NE(model.map, MAP_FAILED);
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(model.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  PackAndRun(cache);
+  ASSERT_FALSE(cache.get_packed_data_names().empty());
+
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  EXPECT_EQ(cache.save_packed_index(), Error::Ok);
+
+  EXPECT_EQ(
+      cache.stats().state,
+      executorch::backends::xnnpack::delegate::PackedCacheState::HeapFallback);
+  EXPECT_EQ(cache.stats().last_errno, EEXIST);
+  ASSERT_EQ(read_file(model.path), model.bytes);
+  EXPECT_EQ(std::memcmp(model.map, model.bytes.data(), model.bytes.size()), 0);
+}
+
+// Same sequence, then a new pack: it goes to heap, not into the model file.
+TEST_F(XNNWeightsCacheTest, ReinitAfterRefusalPacksNewWeightsOnHeap) {
+  MappedModel model("reinit_pack");
+  ASSERT_NE(model.map, MAP_FAILED);
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(model.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  PackAndRun(cache);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+
+  const auto before = cache.stats();
+  xnn_weights_cache_t provider = cache.get();
+  ASSERT_NE(provider->reserve_space(provider->context, 4096), nullptr);
+  const auto after = cache.stats();
+
+  EXPECT_EQ(after.mapped_bytes, before.mapped_bytes);
+  EXPECT_EQ(after.heap_bytes, before.heap_bytes + 4096);
+  ASSERT_EQ(read_file(model.path), model.bytes);
+  EXPECT_EQ(std::memcmp(model.map, model.bytes.data(), model.bytes.size()), 0);
+}
+
+// The whole sequence through the manager, which hands one instance to every
+// delegate on a path (another partition, another method, a second load):
+// the first delegate's init refuses the model and packs named weights to heap,
+// a second delegate gets the same instance and initializes it again, a third
+// init adds a new pack, then an explicit save and the manager's save_all. The
+// model and a live mapping of it stay unchanged throughout.
+TEST_F(XNNWeightsCacheTest, SharedInstanceNeverWritesARefusedModel) {
+  MappedModel model("shared");
+  ASSERT_NE(model.map, MAP_FAILED);
+  executorch::backends::xnnpack::XNNWeightsCacheManager manager;
+
+  auto first = manager.get_or_create(model.path);
+  ASSERT_TRUE(first.ok());
+  {
+    std::lock_guard<std::mutex> lock(first.get()->mutex());
+    ASSERT_EQ(
+        first.get()->initialize_for_runtime(
+            memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    PackAndRun(*first.get());
+    ASSERT_FALSE(first.get()->get_packed_data_names().empty());
+  }
+
+  auto second = manager.get_or_create(model.path);
+  ASSERT_TRUE(second.ok());
+  ASSERT_EQ(second.get(), first.get());
+  XNNWeightsCache& cache = *second.get();
+  {
+    std::lock_guard<std::mutex> lock(cache.mutex());
+    ASSERT_EQ(
+        cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    PackAndRun(cache);
+    ASSERT_EQ(
+        cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    xnn_weights_cache_t provider = cache.get();
+    ASSERT_NE(provider->reserve_space(provider->context, 4096), nullptr);
+    EXPECT_EQ(cache.save_packed_index(), Error::Ok);
+  }
+  EXPECT_EQ(manager.save_all(), Error::Ok);
+
+  EXPECT_EQ(cache.stats().mapped_bytes, 0);
+  EXPECT_EQ(cache.stats().last_errno, EEXIST);
+  ASSERT_EQ(read_file(model.path), model.bytes);
+  EXPECT_EQ(std::memcmp(model.map, model.bytes.data(), model.bytes.size()), 0);
+}
+
+// The refusal is about the file at one path: pointing an instance that holds
+// no packed weights at another path lets it write a cache there again.
+TEST_F(XNNWeightsCacheTest, NewCachePathClearsTheRefusal) {
+  MappedModel model("new_path");
+  ASSERT_NE(model.map, MAP_FAILED);
+  const TempPath cache_file("new.packed_cache");
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(model.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  ASSERT_TRUE(cache.get_packed_data_names().empty());
+
+  cache.set_packed_cache_path(cache_file.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  const auto before = cache.stats();
+  xnn_weights_cache_t provider = cache.get();
+  ASSERT_NE(provider->reserve_space(provider->context, 4096), nullptr);
+
+  EXPECT_EQ(cache.stats().mapped_bytes, before.mapped_bytes + 4096);
+  EXPECT_EQ(read_file(model.path), model.bytes);
+}
+
+// An instance that holds packed weights and is pointed at another path never
+// accepted the file there, so it packs in memory and leaves that file alone
+// rather than opening it for writing.
+TEST_F(XNNWeightsCacheTest, NewCachePathWithWeightsInMemoryPacksOnHeap) {
+  MappedModel model("new_path_heap");
+  ASSERT_NE(model.map, MAP_FAILED);
+  const TempPath other("new_path_heap_other.packed_cache");
+  const std::vector<char> other_bytes(8192, '\xcc');
+  write_file(other.path, other_bytes);
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(model.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  PackAndRun(cache);
+  ASSERT_FALSE(cache.get_packed_data_names().empty());
+
+  cache.set_packed_cache_path(other.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  const auto before = cache.stats();
+  xnn_weights_cache_t provider = cache.get();
+  ASSERT_NE(provider->reserve_space(provider->context, 4096), nullptr);
+
+  EXPECT_EQ(cache.stats().mapped_bytes, before.mapped_bytes);
+  EXPECT_EQ(cache.stats().heap_bytes, before.heap_bytes + 4096);
+  EXPECT_EQ(read_file(other.path), other_bytes);
+  EXPECT_EQ(read_file(model.path), model.bytes);
+}
+
+// The weights this process packs sit at the start of its own cache file and
+// can happen to read like a program or data file head, with a root offset the
+// head check accepts. The cache must keep using that file: the save writes
+// the trailer, the next launch loads it, and that launch can still write to
+// it. The next launch is made to re-pack (a stale seed in the index), and the
+// re-pack only lands in the file if that launch reopened it for writing. A
+// third launch then loads it with nothing refused.
+TEST_F(
+    XNNWeightsCacheTest,
+    CacheWhoseWeightsStartLikeAnExecuTorchFileKeepsWorking) {
+  const struct {
+    const char* name;
+    const char* bytes_4_to_11;
+  } cases[] = {
+      {"program", "ET12\x33\x33\x33\x33"},
+      {"data", "FT01FH01"},
+  };
+  for (const auto& test_case : cases) {
+    const TempPath file(std::string("weights_head_") + test_case.name);
+    std::vector<float> output;
+    RunLaunchWithCacheFile(file.path, output);
+    const uint32_t real_seed = read_first_entry_seed(file.path);
+    ASSERT_NE(real_seed, 0u);
+
+    std::array<char, 12> head{};
+    put_le32(head.data(), 8);
+    std::memcpy(head.data() + 4, test_case.bytes_4_to_11, 8);
+    {
+      const ScopedFd writer(::open(file.path.c_str(), O_WRONLY));
+      ASSERT_GE(writer.fd, 0);
+      ASSERT_EQ(::pwrite(writer.fd, head.data(), head.size(), 0), 12);
+    }
+    write_first_entry_seed(file.path, 0xDEADBEEFu);
+    const off_t size_before = file_size_of(file.path);
+
+    std::vector<float> output_after;
+    RunLaunchWithCacheFile(file.path, output_after);
+    EXPECT_EQ(read_first_entry_seed(file.path), real_seed) << test_case.name;
+    EXPECT_GT(file_size_of(file.path), size_before) << test_case.name;
+
+    XNNWeightsCache third;
+    third.set_packed_cache_path(file.path);
+    ASSERT_EQ(
+        third.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    EXPECT_GT(third.get_packed_data_names().size(), 0u) << test_case.name;
+    EXPECT_EQ(
+        third.stats().failure,
+        executorch::backends::xnnpack::delegate::PackedCacheFailure::None)
+        << test_case.name;
+    EXPECT_EQ(
+        third.stats().state,
+        executorch::backends::xnnpack::delegate::PackedCacheState::FileBacked)
+        << test_case.name;
+  }
+}
+
+// Trust comes from the file's own trailer, read on the descriptor that would
+// be written. After a load, a model renamed over the path isn't written when
+// the instance reopens the path: that init packs in memory and leaves the
+// model alone. The refusal doesn't stick, so a cache renamed back is used
+// again.
+TEST_F(XNNWeightsCacheTest, ModelRenamedOverALoadedCacheIsNotWritten) {
+  const TempPath file("renamed_over.packed_cache");
+  std::vector<float> output;
+  RunLaunchWithCacheFile(file.path, output);
+  const std::vector<char> cache_bytes = read_file(file.path);
+
+  // The first init can't take the write lock, so the instance holds the
+  // loaded entries with no write descriptor, and the next init reopens.
+  const ScopedFd holder(::open(file.path.c_str(), O_RDONLY));
+  ASSERT_GE(holder.fd, 0);
+  ASSERT_EQ(::flock(holder.fd, LOCK_SH), 0);
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(file.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  ASSERT_GT(cache.get_packed_data_names().size(), 0u);
+  ASSERT_EQ(cache.stats().last_errno, EWOULDBLOCK);
+  ASSERT_EQ(::flock(holder.fd, LOCK_UN), 0);
+
+  MappedModel model("renamed_over_model");
+  ASSERT_NE(model.map, MAP_FAILED);
+  ASSERT_EQ(::rename(model.path.c_str(), file.path.c_str()), 0);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  EXPECT_EQ(cache.stats().last_errno, 0);
+  ASSERT_EQ(read_file(file.path), model.bytes);
+  EXPECT_EQ(std::memcmp(model.map, model.bytes.data(), model.bytes.size()), 0);
+
+  const TempPath copy("renamed_over_copy.packed_cache");
+  write_file(copy.path, cache_bytes);
+  ASSERT_EQ(::rename(copy.path.c_str(), file.path.c_str()), 0);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  // The cache reopened the file and holds its exclusive lock.
+  const ScopedFd probe(::open(file.path.c_str(), O_RDONLY));
+  ASSERT_GE(probe.fd, 0);
+  errno = 0;
+  EXPECT_EQ(::flock(probe.fd, LOCK_SH | LOCK_NB), -1);
+  EXPECT_EQ(errno, EWOULDBLOCK);
+}
+
+// A later init of the same instance reopens a file it accepted without a
+// content check, even when the file starts like a program. Here the first
+// init loads the cache but can't take the write lock (the test holds a shared
+// lock), so the entries stay in memory with no write descriptor. Once the
+// lock is free, the next init takes the reopen branch. Holding the exclusive
+// lock afterwards shows the cache reopened its file.
+TEST_F(XNNWeightsCacheTest, ReinitReopensItsOwnLoadedFile) {
+  const TempPath file("reopen_own.packed_cache");
+  {
+    XNNWeightsCache writer;
+    writer.set_packed_cache_path(file.path);
+    ASSERT_EQ(
+        writer.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    PackAndRun(writer);
+  }
+  // The cache's first packed bytes now read like a program head, with a root
+  // offset the open-time check accepts. The trailer is untouched.
+  std::array<char, 8> head{};
+  put_le32(head.data(), 8);
+  std::memcpy(head.data() + 4, executorch_flatbuffer::ProgramIdentifier(), 4);
+  const ScopedFd holder(::open(file.path.c_str(), O_RDWR));
+  ASSERT_GE(holder.fd, 0);
+  ASSERT_EQ(::pwrite(holder.fd, head.data(), head.size(), 0), 8);
+  ASSERT_EQ(::flock(holder.fd, LOCK_SH), 0);
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(file.path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  ASSERT_GT(cache.get_packed_data_names().size(), 0u);
+  ASSERT_EQ(cache.stats().last_errno, EWOULDBLOCK);
+
+  ASSERT_EQ(::flock(holder.fd, LOCK_UN), 0);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  EXPECT_NE(cache.stats().last_errno, EEXIST);
+  errno = 0;
+  EXPECT_EQ(::flock(holder.fd, LOCK_SH | LOCK_NB), -1);
+  EXPECT_EQ(errno, EWOULDBLOCK);
+}
+
+// A cache path whose start can't be read is left alone. A FIFO makes pread
+// fail (ESPIPE): it is refused, not truncated, and weights pack to heap.
+TEST_F(XNNWeightsCacheTest, UnreadableFileAtCachePathIsLeftAlone) {
+  const TempPath file("fifo.packed_cache");
+  const std::string& path = file.path;
+  ASSERT_EQ(::mkfifo(path.c_str(), 0600), 0);
+  // Keep both ends open so the cache's own opens of the FIFO don't block
+  // waiting for the other end.
+  const ScopedFd hold(::open(path.c_str(), O_RDWR | O_NONBLOCK));
+  ASSERT_GE(hold.fd, 0);
+
+  XNNWeightsCache cache;
+  cache.set_packed_cache_path(path);
+  ASSERT_EQ(
+      cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  PackAndRun(cache);
+
+  const auto stats = cache.stats();
+  EXPECT_EQ(
+      stats.state,
+      executorch::backends::xnnpack::delegate::PackedCacheState::HeapFallback);
+  EXPECT_EQ(
+      stats.failure,
+      executorch::backends::xnnpack::delegate::PackedCacheFailure::OpenFailed);
+  EXPECT_EQ(stats.last_errno, ESPIPE);
+  EXPECT_EQ(stats.mapped_bytes, 0);
+  EXPECT_GT(stats.heap_bytes, 0);
+  struct stat st {};
+  ASSERT_EQ(::stat(path.c_str(), &st), 0);
+  EXPECT_TRUE(S_ISFIFO(st.st_mode));
+}
+
+// Unchanged behavior: a real cache stays file-backed across a re-init on the
+// same instance. New packs still go to the file, saves still succeed, and the
+// file still loads as a cache.
+TEST_F(XNNWeightsCacheTest, NormalCacheIsUnaffectedByReinit) {
+  const TempPath file("reinit_ok.packed_cache");
+  const std::string& path = file.path;
+  {
+    XNNWeightsCache cache;
+    cache.set_packed_cache_path(path);
+    ASSERT_EQ(
+        cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    PackAndRun(cache);
+    ASSERT_EQ(cache.save_packed_index(), Error::Ok);
+
+    ASSERT_EQ(
+        cache.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+        Error::Ok);
+    const auto before = cache.stats();
+    xnn_weights_cache_t provider = cache.get();
+    ASSERT_NE(provider->reserve_space(provider->context, 4096), nullptr);
+    const auto after = cache.stats();
+    EXPECT_EQ(after.mapped_bytes, before.mapped_bytes + 4096);
+    EXPECT_EQ(after.heap_bytes, before.heap_bytes);
+    EXPECT_EQ(cache.save_packed_index(), Error::Ok);
+    EXPECT_EQ(
+        cache.stats().state,
+        executorch::backends::xnnpack::delegate::PackedCacheState::FileBacked);
+  }
+
+  XNNWeightsCache reloaded;
+  reloaded.set_packed_cache_path(path);
+  ASSERT_EQ(
+      reloaded.initialize_for_runtime(memory_allocator_.get(), data_map_.get()),
+      Error::Ok);
+  EXPECT_GT(reloaded.get_packed_data_names().size(), 0u);
+  EXPECT_EQ(
+      reloaded.stats().state,
+      executorch::backends::xnnpack::delegate::PackedCacheState::FileBacked);
+  EXPECT_EQ(
+      reloaded.stats().failure,
+      executorch::backends::xnnpack::delegate::PackedCacheFailure::None);
+}
+
+namespace {
+
+// A file served through read_fully_at's read_at hook, so a test can make
+// pread return short reads, EINTR or an error.
+struct FakeFile {
+  std::vector<uint8_t> bytes;
+  size_t max_chunk = SIZE_MAX;
+  int eintr_left = 0;
+  int fail_errno = 0;
+  int calls = 0;
+};
+
+// The file the fake reads, set by each test. A function-local static keeps it
+// out of namespace scope.
+FakeFile*& fake_file() {
+  static FakeFile* file = nullptr;
+  return file;
+}
+
+// Points the fake at a test's file for the scope, and clears it after so no
+// later read follows a pointer to a finished test's local.
+struct ScopedFakeFile {
+  explicit ScopedFakeFile(FakeFile& f) {
+    fake_file() = &f;
+  }
+  ~ScopedFakeFile() {
+    fake_file() = nullptr;
+  }
+  ScopedFakeFile(const ScopedFakeFile&) = delete;
+  ScopedFakeFile& operator=(const ScopedFakeFile&) = delete;
+  ScopedFakeFile(ScopedFakeFile&&) = delete;
+  ScopedFakeFile& operator=(ScopedFakeFile&&) = delete;
+};
+
+ssize_t fake_read_at(int /*fd*/, void* buf, size_t n, off_t offset) {
+  FakeFile& f = *fake_file();
+  ++f.calls;
+  if (f.eintr_left > 0) {
+    --f.eintr_left;
+    errno = EINTR;
+    return -1;
+  }
+  if (f.fail_errno != 0) {
+    errno = f.fail_errno;
+    return -1;
+  }
+  const size_t pos = static_cast<size_t>(offset);
+  if (pos >= f.bytes.size()) {
+    return 0;
+  }
+  const size_t k = std::min({n, f.max_chunk, f.bytes.size() - pos});
+  std::memcpy(buf, f.bytes.data() + pos, k);
+  return static_cast<ssize_t>(k);
+}
+
+std::vector<uint8_t> counting_bytes(size_t n) {
+  std::vector<uint8_t> bytes(n);
+  for (size_t i = 0; i < n; ++i) {
+    bytes[i] = static_cast<uint8_t>(i);
+  }
+  return bytes;
+}
+
+} // namespace
+
+using executorch::backends::xnnpack::delegate::internal::read_fully_at;
+
+// pread may return fewer bytes than asked without reaching end of file. The
+// cache file check reads its 12 bytes through read_fully_at, which keeps
+// reading, so a long model is never mistaken for a file shorter than the head.
+TEST(XNNWeightsCacheReadTest, ShortReadsOfALongerFileAreCompleted) {
+  FakeFile f;
+  f.bytes = counting_bytes(64);
+  f.max_chunk = 5;
+  const ScopedFakeFile scope(f);
+  std::array<uint8_t, 12> head{};
+
+  EXPECT_EQ(read_fully_at(3, head.data(), head.size(), 0, &fake_read_at), 12);
+  EXPECT_TRUE(std::equal(head.begin(), head.end(), f.bytes.begin()));
+  EXPECT_EQ(f.calls, 3);
+}
+
+TEST(XNNWeightsCacheReadTest, EintrIsRetried) {
+  FakeFile f;
+  f.bytes = counting_bytes(64);
+  f.eintr_left = 2;
+  const ScopedFakeFile scope(f);
+  std::array<uint8_t, 12> head{};
+
+  EXPECT_EQ(read_fully_at(3, head.data(), head.size(), 0, &fake_read_at), 12);
+  EXPECT_TRUE(std::equal(head.begin(), head.end(), f.bytes.begin()));
+}
+
+TEST(XNNWeightsCacheReadTest, StopsShortOnlyAtEndOfFile) {
+  FakeFile f;
+  f.bytes = counting_bytes(7);
+  f.max_chunk = 3;
+  const ScopedFakeFile scope(f);
+  std::array<uint8_t, 12> head{};
+
+  EXPECT_EQ(read_fully_at(3, head.data(), head.size(), 0, &fake_read_at), 7);
+  EXPECT_TRUE(std::equal(head.begin(), head.begin() + 7, f.bytes.begin()));
+}
+
+TEST(XNNWeightsCacheReadTest, ReportsOtherErrors) {
+  FakeFile f;
+  f.bytes = counting_bytes(64);
+  f.fail_errno = EIO;
+  const ScopedFakeFile scope(f);
+  std::array<uint8_t, 12> head{};
+
+  errno = 0;
+  EXPECT_EQ(read_fully_at(3, head.data(), head.size(), 0, &fake_read_at), -1);
+  EXPECT_EQ(errno, EIO);
 }
 
 #endif

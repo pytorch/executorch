@@ -16,10 +16,14 @@
 #include <unistd.h>
 #include <cerrno>
 #endif
+#include <executorch/schema/program_generated.h>
 #include <xnnpack.h>
+#include <array>
+#include <cstring>
 #include <exception>
 #include <memory>
 #include <new>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -77,6 +81,29 @@ static T read_le(const uint8_t* src) {
 }
 
 #ifndef _WIN32
+namespace internal {
+ssize_t
+read_fully_at(int fd, void* buf, size_t n, off_t offset, ReadAtFn read_at) {
+  auto* out = static_cast<uint8_t*>(buf);
+  size_t done = 0;
+  while (done < n) {
+    const ssize_t r =
+        read_at(fd, out + done, n - done, offset + static_cast<off_t>(done));
+    if (r < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return -1;
+    }
+    if (r == 0) {
+      break; // End of file.
+    }
+    done += static_cast<size_t>(r);
+  }
+  return static_cast<ssize_t>(done);
+}
+} // namespace internal
+
 // Open the cache file and take an advisory exclusive lock. Returns the
 // fd, or -1 if open/flock failed (logs the failure). The caller decides
 // how to recover (typically: skip the mmap path for this init).
@@ -102,6 +129,178 @@ static int open_locked(const std::string& path, int flags, int* out_errno) {
       *out_errno = err;
     }
     ET_LOG(Error, "flock(%s) failed (errno=%d)", path.c_str(), err);
+    close(fd);
+    return -1;
+  }
+  return fd;
+}
+
+// Whether fd holds an ExecuTorch program (.pte) or data (.ptd) file.
+// A program is a flatbuffer whose 4-byte file identifier is "ET" plus two
+// version digits (the current one comes from schema/program.fbs); any version
+// counts, not just the one this runtime loads. A data file is a flatbuffer
+// with the identifier "FT01" (extension/flat_tensor/serialize/flat_tensor.fbs)
+// and the flat tensor header magic "FH01" at offset 8
+// (FlatTensorHeader::kMagic at kHeaderOffset). Those two are spelled out so
+// the backend doesn't depend on the flat tensor extension; the tests check
+// them against FlatTensorHeader.
+//
+// Both are flatbuffers, so their first 4 bytes are the little-endian offset of
+// the root table. The file also has to pass the bound the loaders themselves
+// apply to that offset (Program::load and FlatTensorDataMap::load): at least
+// 8, past the root offset and the identifier, and leaving room for the
+// table's 4-byte vtable offset. The loaders measure against the flatbuffer
+// region, which is never larger than the file, so checking against the file
+// size accepts everything they accept. A cache left without a trailer, whose
+// first bytes are packed weights that happen to look like an identifier,
+// usually fails it and is rebuilt.
+//
+// A file whose start or size can't be read is reported as Unreadable, so the
+// caller leaves it alone rather than truncating something it couldn't check.
+enum class FileKind { Other, ExecuTorch, Unreadable };
+static ssize_t system_pread(int fd, void* buf, size_t n, off_t offset) {
+  return pread(fd, buf, n, offset);
+}
+static FileKind executorch_file_kind(int fd, int* out_errno) {
+  constexpr size_t kDataMagicOffset = 8;
+  std::array<uint8_t, kDataMagicOffset + 4> head{};
+  const ssize_t n =
+      internal::read_fully_at(fd, head.data(), head.size(), 0, &system_pread);
+  if (n < 0) {
+    *out_errno = errno;
+    return FileKind::Unreadable;
+  }
+  if (n != static_cast<ssize_t>(head.size())) {
+    // read_fully_at only stops short at end of file, so the file really is
+    // shorter than any program or data file head.
+    return FileKind::Other;
+  }
+  const char* id = flatbuffers::GetBufferIdentifier(head.data());
+  const auto is_digit = [](char c) { return c >= '0' && c <= '9'; };
+  const bool is_program =
+      executorch_flatbuffer::ProgramBufferHasIdentifier(head.data()) ||
+      (id[0] == 'E' && id[1] == 'T' && is_digit(id[2]) && is_digit(id[3]));
+  const bool is_data = std::memcmp(id, "FT01", 4) == 0 &&
+      std::memcmp(head.data() + kDataMagicOffset, "FH01", 4) == 0;
+  if (!is_program && !is_data) {
+    return FileKind::Other;
+  }
+  // The 4-byte root offset plus the 4-byte identifier: ExtendedHeader's and
+  // FlatTensorHeader's kHeaderOffset, which the loaders use as this bound.
+  constexpr uint64_t kMinRootOffset = 8;
+  const uint64_t root_offset =
+      flatbuffers::ReadScalar<flatbuffers::uoffset_t>(head.data());
+  if (root_offset < kMinRootOffset) {
+    return FileKind::Other;
+  }
+  // lseek rather than fstat, which is on Apple's required-reason API list.
+  // Only pread, pwrite, ftruncate and mmap use this fd, so its position
+  // doesn't matter.
+  const off_t size = lseek(fd, 0, SEEK_END);
+  if (size < 0) {
+    *out_errno = errno;
+    return FileKind::Unreadable;
+  }
+  if (root_offset + sizeof(flatbuffers::soffset_t) >
+      static_cast<uint64_t>(size)) {
+    return FileKind::Other;
+  }
+  return FileKind::ExecuTorch;
+}
+
+bool XNNWeightsCache::may_write_cache_file(int fd) {
+  int read_errno = 0;
+  const FileKind kind = executorch_file_kind(fd, &read_errno);
+  if (kind == FileKind::Other) {
+    return true;
+  }
+  // Message first: ET_LOG cuts long lines, and these paths are long.
+  if (kind == FileKind::Unreadable) {
+    ET_LOG(
+        Error,
+        "Could not read the start of the file at the cache path (errno=%d); leaving it untouched and packing in memory: %s",
+        read_errno,
+        packed_cache_path_.c_str());
+  } else {
+    ET_LOG(
+        Error,
+        "Cache path names an ExecuTorch program or data file, not a packed weight cache; leaving it untouched and packing in memory: %s",
+        packed_cache_path_.c_str());
+    cache_file_protected_ = true;
+  }
+  record_cache_failure(
+      PackedCacheFailure::OpenFailed,
+      kind == FileKind::Unreadable ? read_errno : EEXIST);
+  return false;
+}
+
+int XNNWeightsCache::open_cache_for_write(int flags, bool check_content) {
+  if (cache_file_protected_) {
+    record_cache_failure(PackedCacheFailure::OpenFailed, EEXIST);
+    return -1;
+  }
+  int open_errno = 0;
+  const int fd = open_locked(packed_cache_path_, flags, &open_errno);
+  if (fd < 0) {
+    record_cache_failure(PackedCacheFailure::OpenFailed, open_errno);
+    return -1;
+  }
+  if (check_content && !may_write_cache_file(fd)) {
+    close(fd);
+    return -1;
+  }
+  return fd;
+}
+
+std::optional<XNNWeightsCache::CacheFooter> XNNWeightsCache::read_cache_footer(
+    int fd,
+    size_t file_size) const {
+  // Footer: [index_start:u64][entry_count:u32][magic:u32][version:u32]
+  std::array<uint8_t, 20> footer{};
+  if (file_size < footer.size() ||
+      internal::read_fully_at(
+          fd,
+          footer.data(),
+          footer.size(),
+          static_cast<off_t>(file_size - footer.size()),
+          &system_pread) != static_cast<ssize_t>(footer.size())) {
+    return std::nullopt;
+  }
+  const uint64_t index_start = read_le<uint64_t>(footer.data());
+  const uint32_t entry_count = read_le<uint32_t>(footer.data() + 8);
+  const uint32_t magic = read_le<uint32_t>(footer.data() + 12);
+  const uint32_t version = read_le<uint32_t>(footer.data() + 16);
+  if (magic != kCacheMagic || version != kCacheVersion ||
+      index_start >= file_size - footer.size()) {
+    return std::nullopt;
+  }
+  return CacheFooter{index_start, entry_count};
+}
+
+bool XNNWeightsCache::has_cache_trailer(int fd) const {
+  const off_t end = lseek(fd, 0, SEEK_END);
+  return end >= 0 &&
+      read_cache_footer(fd, static_cast<size_t>(end)).has_value();
+}
+
+int XNNWeightsCache::reopen_cache_for_write() {
+  const int fd = open_cache_for_write(O_RDWR, /*check_content=*/false);
+  if (fd < 0) {
+    return -1;
+  }
+  // Trust the file through its own trailer, read on the descriptor that would
+  // be written: an ExecuTorch program or data file never ends with it, and a
+  // saved cache always does. No head check: the start of a cache holds packed
+  // weights, which can happen to read like a program head.
+  if (!has_cache_trailer(fd)) {
+    ET_LOG(
+        Error,
+        "The file at the cache path doesn't end with a packed weight cache trailer; not writing to it, packing in memory this init: %s",
+        packed_cache_path_.c_str());
+    // Not latched in cache_file_protected_: a cache this instance created and
+    // hasn't saved yet has no trailer either, and a later init may find a
+    // saved cache there again.
+    record_cache_failure(PackedCacheFailure::OpenFailed, 0);
     close(fd);
     return -1;
   }
@@ -231,19 +430,31 @@ Error XNNWeightsCache::initialize_for_runtime(
   if (packed_cache_path_.empty() || packed_file_fd_ >= 0) {
     return Error::Ok;
   }
+  // An earlier init found an ExecuTorch file at this path, so this instance
+  // keeps packing in memory and never opens it for writing.
+  // open_cache_for_write refuses too; this just skips the reads.
+  if (cache_file_protected_) {
+    return Error::Ok;
+  }
 
-  // Entries already in memory (from a prior load_packed_cache or a prior
-  // fresh-write session). Just reopen the write fd that save_packed_index
-  // closed; subsequent reserve_space can extend the file. Using metadata
-  // emptiness (not a separate flag) as the gate avoids a latent bug
-  // where fresh-write→save→re-init re-enters load_packed_cache and
-  // double-mmaps the same file.
+  // Entries already in memory (from a prior load_packed_cache, a prior
+  // fresh-write session, or packs that went to heap). Using metadata emptiness
+  // (not a separate flag) as the gate avoids a latent bug where
+  // fresh-write→save→re-init re-enters load_packed_cache and double-mmaps the
+  // same file.
   if (!name_to_packed_data_metadata_.empty()) {
-    int open_errno = 0;
-    packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR, &open_errno);
-    if (packed_file_fd_ < 0) {
-      record_cache_failure(PackedCacheFailure::OpenFailed, open_errno);
-    } else {
+    if (!cache_file_accepted_) {
+      // No init of this instance accepted a file at this path (an earlier
+      // open failed, or the path changed), so the entries belong to heap or
+      // to another file, and nothing vouches for the file here. Pack in
+      // memory rather than open it for writing.
+      record_cache_failure(PackedCacheFailure::OpenFailed, 0);
+      return Error::Ok;
+    }
+    // This instance loaded or created the file at this path. Reopen it only
+    // if it still ends with a cache trailer.
+    packed_file_fd_ = reopen_cache_for_write();
+    if (packed_file_fd_ >= 0) {
       mark_cache_file_backed();
     }
     return Error::Ok;
@@ -258,31 +469,32 @@ Error XNNWeightsCache::initialize_for_runtime(
         "Loaded packed weight cache: %s (%zu entries)",
         packed_cache_path_.c_str(),
         name_to_packed_data_metadata_.size());
-    int open_errno = 0;
-    packed_file_fd_ = open_locked(packed_cache_path_, O_RDWR, &open_errno);
-    // Loaded entries are already mmap'd, so reads stay file-backed even if the
-    // write fd could not be reopened. Record the errno anyway: without it a
-    // partial cache silently re-packs to heap every launch with no reason.
-    if (packed_file_fd_ < 0) {
-      record_cache_failure(PackedCacheFailure::OpenFailed, open_errno);
-    }
+    // load_packed_cache just validated the trailer and index, so the file is a
+    // cache. The write descriptor checks the trailer again, on the file it
+    // would write, in case the path was replaced in between. Loaded entries
+    // are already mmap'd, so reads stay file-backed even if the write fd could
+    // not be reopened; the failure is recorded anyway: without it a partial
+    // cache silently re-packs to heap every launch with no reason.
+    cache_file_accepted_ = true;
+    packed_file_fd_ = reopen_cache_for_write();
     mark_cache_file_backed();
     return Error::Ok;
   }
 
   // Fresh write. Skip O_TRUNC in open_locked so a concurrent holder's
   // mmap stays valid; truncate explicitly only after we hold the lock.
-  int create_errno = 0;
+  // The file failed the cache check, and is about to be truncated. A cache
+  // path that names a model or its data file (a shortened or wrong path)
+  // must not destroy it: the runtime may still have it mapped.
+  // The only place the head is checked, because it is the only place a file
+  // is about to be destroyed. open_cache_for_write refuses such a file.
   packed_file_fd_ =
-      open_locked(packed_cache_path_, O_RDWR | O_CREAT, &create_errno);
+      open_cache_for_write(O_RDWR | O_CREAT, /*check_content=*/true);
   if (packed_file_fd_ < 0) {
-    const int err = create_errno;
     ET_LOG(
         Error,
-        "open(O_RDWR|O_CREAT) failed for %s (errno=%d); heap fallback this init",
-        packed_cache_path_.c_str(),
-        err);
-    record_cache_failure(PackedCacheFailure::OpenFailed, err);
+        "Not writing a packed weight file at the cache path; heap fallback this init: %s",
+        packed_cache_path_.c_str());
     return Error::Ok;
   }
   if (ftruncate(packed_file_fd_, 0) != 0) {
@@ -298,6 +510,7 @@ Error XNNWeightsCache::initialize_for_runtime(
     return Error::Ok;
   }
   reset_for_fresh_write();
+  cache_file_accepted_ = true;
   mark_cache_file_backed();
   ET_LOG(
       Info,
@@ -699,6 +912,9 @@ enum xnn_status XNNWeightsCache::delete_cache(XNNWeightsCache* context) {
 
 void XNNWeightsCache::set_packed_cache_path(const std::string& path) {
   packed_cache_path_ = path;
+  // The refusal and the acceptance are both about the file at the old path.
+  cache_file_protected_ = false;
+  cache_file_accepted_ = false;
 }
 
 Error XNNWeightsCache::save_packed_index() {
@@ -717,6 +933,12 @@ Error XNNWeightsCache::save_packed_index() {
       mmap_regions_at_last_save_ > 0) {
     return Error::Ok;
   }
+  // No content check here. packed_file_fd_ only ever comes from
+  // open_cache_for_write for a file this instance accepted (one that ends
+  // with a cache trailer, or one the fresh write checked and truncated), and
+  // writes through it reach that same file even if the path is replaced
+  // later. Checking again would only look at weights this process packed,
+  // which can happen to start like a program and must not block the save.
 
   size_t index_start = packed_file_used_;
   std::vector<uint8_t> buf;
@@ -819,27 +1041,19 @@ bool XNNWeightsCache::load_packed_cache() {
   // of this header to declare a PrivacyInfo reason. lseek is not on the
   // list and yields the same byte count for a regular file.
   off_t end_off = lseek(fd, 0, SEEK_END);
-  if (end_off < 20) {
+  if (end_off < 0) {
     close(fd);
     return false;
   }
   size_t file_size = static_cast<size_t>(end_off);
-
-  uint8_t footer[20];
-  if (pread(fd, footer, 20, file_size - 20) != 20) {
+  const std::optional<CacheFooter> parsed_footer =
+      read_cache_footer(fd, file_size);
+  if (!parsed_footer.has_value()) {
     close(fd);
     return false;
   }
-  uint64_t index_start = read_le<uint64_t>(footer);
-  uint32_t entry_count = read_le<uint32_t>(footer + 8);
-  uint32_t magic = read_le<uint32_t>(footer + 12);
-  uint32_t version = read_le<uint32_t>(footer + 16);
-
-  if (magic != kCacheMagic || version != kCacheVersion ||
-      index_start >= file_size - 20) {
-    close(fd);
-    return false;
-  }
+  const uint64_t index_start = parsed_footer->index_start;
+  const uint32_t entry_count = parsed_footer->entry_count;
   const size_t index_region_end = file_size - 20;
 
   void* map = mmap(nullptr, file_size, PROT_READ, MAP_SHARED, fd, 0);

@@ -113,6 +113,11 @@ enum class PackedCacheHeapReason : int32_t {
 /** Which step failed when a configured path still ended up on heap. */
 enum class PackedCacheFailure : int32_t {
   None = 0,
+  /// The cache file could not be opened. last_errno EEXIST means the path
+  /// names an ExecuTorch program or data file, which is left untouched.
+  /// last_errno 0 means it didn't reopen the file for writing: the file no
+  /// longer ends with a cache trailer, or an earlier init never accepted a
+  /// file at this path. It packs in memory for that init.
   OpenFailed = 1,
   TruncateFailed = 2,
   GrowFailed = 3,
