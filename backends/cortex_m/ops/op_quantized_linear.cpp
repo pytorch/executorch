@@ -55,7 +55,7 @@ Tensor& quantized_linear_impl(
   auto in_feat = input.size(input.dim() - 1);
   auto out_feat = out.size(out.dim() - 1);
   auto batches = 1;
-  for (size_t i = 0; i < input.dim() - 1; i++) {
+  for (int64_t i = 0; i < input.dim() - 1; i++) {
     batches *= input.size(i);
   }
   ET_LOG(

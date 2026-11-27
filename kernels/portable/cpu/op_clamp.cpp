@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -29,8 +30,9 @@ namespace {
 template <typename CTYPE_OUT, typename CTYPE_CAST>
 /** Check if val, when cast to CTYPE_CAST, is not in the range of CTYPE_OUT */
 bool is_out_of_bounds(CTYPE_CAST val_cast) {
-  return val_cast < std::numeric_limits<CTYPE_OUT>::lowest() ||
-      val_cast > std::numeric_limits<CTYPE_OUT>::max();
+  return val_cast <
+      static_cast<CTYPE_CAST>(std::numeric_limits<CTYPE_OUT>::lowest()) ||
+      val_cast > static_cast<CTYPE_CAST>(std::numeric_limits<CTYPE_OUT>::max());
 }
 
 ET_NODISCARD bool check_bounds(

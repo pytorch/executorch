@@ -300,9 +300,12 @@ inline float reduce_add(const T* x, size_t size) {
 /// `size` elements.
 template <typename T>
 inline float vec_powerf(const T* x, size_t size) {
+  using ComputeType = decltype(float{} * T{});
   float sum = 0;
   for (const auto i : c10::irange(size)) {
-    sum += static_cast<float>(x[i]) * x[i];
+    sum = static_cast<float>(
+        static_cast<ComputeType>(sum) +
+        static_cast<ComputeType>(static_cast<float>(x[i])) * x[i]);
   }
   return sum;
 }

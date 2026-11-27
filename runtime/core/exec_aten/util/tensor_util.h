@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -1111,18 +1112,18 @@ bool extract_scalar_tensor(executorch::aten::Tensor tensor, FLOAT_T* out_val) {
   if (tensor.numel() != 1) {
     return false;
   }
-#define CASE_REAL_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                    \
-  case executorch::aten::ScalarType::TENSOR_DTYPE: {                   \
-    /* ET_FORALL_REAL_TYPES guarantees TENSOR_CTYPE is a real type. */ \
-    double val =                                                       \
-        static_cast<double>(tensor.const_data_ptr<TENSOR_CTYPE>()[0]); \
-    if (std::isfinite(val) &&                                          \
-        (val < std::numeric_limits<FLOAT_T>::lowest() ||               \
-         val > std::numeric_limits<FLOAT_T>::max())) {                 \
-      return false;                                                    \
-    }                                                                  \
-    *out_val = static_cast<FLOAT_T>(val);                              \
-    return true;                                                       \
+#define CASE_REAL_DTYPE(TENSOR_CTYPE, TENSOR_DTYPE)                           \
+  case executorch::aten::ScalarType::TENSOR_DTYPE: {                          \
+    /* ET_FORALL_REAL_TYPES guarantees TENSOR_CTYPE is a real type. */        \
+    double val =                                                              \
+        static_cast<double>(tensor.const_data_ptr<TENSOR_CTYPE>()[0]);        \
+    if (std::isfinite(val) &&                                                 \
+        (val < static_cast<double>(std::numeric_limits<FLOAT_T>::lowest()) || \
+         val > static_cast<double>(std::numeric_limits<FLOAT_T>::max()))) {   \
+      return false;                                                           \
+    }                                                                         \
+    *out_val = static_cast<FLOAT_T>(val);                                     \
+    return true;                                                              \
   }
 
   switch (tensor.scalar_type()) {

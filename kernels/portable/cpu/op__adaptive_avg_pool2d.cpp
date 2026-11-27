@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -74,6 +75,7 @@ Tensor& _adaptive_avg_pool2d_out(
   static constexpr const char op_name[] = "_adaptive_avg_pool2d.out";
 
   ET_SWITCH_FLOATHBF16_TYPES_AND(Long, in_type, ctx, op_name, CTYPE, [&]() {
+    using AccumulateType = decltype(float{} + CTYPE{});
     const CTYPE* const in_ptr = in.const_data_ptr<CTYPE>();
     CTYPE* const out_ptr = out.mutable_data_ptr<CTYPE>();
 
@@ -106,7 +108,9 @@ Tensor& _adaptive_avg_pool2d_out(
             float sum = 0;
             for (int64_t ih = ih0; ih < ih1; ++ih) {
               for (int64_t iw = iw0; iw < iw1; ++iw) {
-                sum += plane_in[ih * in_W + iw];
+                sum = static_cast<float>(
+                    static_cast<AccumulateType>(sum) +
+                    static_cast<AccumulateType>(plane_in[ih * in_W + iw]));
               }
             }
 

@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -66,14 +67,18 @@ void add_tensors(
 
   for (size_t i = 0; i < n; ++i) {
     // Dq -> fp add -> Q. Can be optimized further
-    const auto dqa =
-        dequantize_val<CTYPE, float>(a_scale, a_zero_point, data_a[i]);
-    const auto dqb =
-        dequantize_val<CTYPE, float>(b_scale, b_zero_point, data_b[i]);
+    const auto dqa = dequantize_val<CTYPE, float>(
+        static_cast<double>(a_scale), a_zero_point, data_a[i]);
+    const auto dqb = dequantize_val<CTYPE, float>(
+        static_cast<double>(b_scale), b_zero_point, data_b[i]);
     const auto accumulate = dqa + dqb;
 
     data_out[i] = quantize_val<float, CTYPE>(
-        out_scale, out_zero_point, accumulate, out_quant_min, out_quant_max);
+        static_cast<double>(out_scale),
+        out_zero_point,
+        accumulate,
+        out_quant_min,
+        out_quant_max);
   }
 }
 

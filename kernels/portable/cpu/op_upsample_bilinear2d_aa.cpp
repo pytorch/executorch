@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -121,6 +122,7 @@ void upsample_bilinear2d_aa_kernel_impl(
     const float scale_h,
     const float scale_w,
     Tensor& out) {
+  using ComputeType = decltype(CTYPE{} * float{});
   const auto in_data = in.const_data_ptr<CTYPE>();
   auto out_data = out.mutable_data_ptr<CTYPE>();
 
@@ -153,7 +155,9 @@ void upsample_bilinear2d_aa_kernel_impl(
                 const float w_weight =
                     compute_normalized_aa_weight(w_params, iw);
 
-                value += in_plane[ih * in.size(3) + iw] * h_weight * w_weight;
+                value += in_plane[ih * in.size(3) + iw] *
+                    static_cast<ComputeType>(h_weight) *
+                    static_cast<ComputeType>(w_weight);
               }
             }
 
@@ -188,7 +192,8 @@ void upsample_bilinear2d_aa_kernel_impl(
                     compute_normalized_aa_weight(w_params, iw);
 
                 value += in_batch[(ih * in.size(3) + iw) * in.size(1) + c] *
-                    h_weight * w_weight;
+                    static_cast<ComputeType>(h_weight) *
+                    static_cast<ComputeType>(w_weight);
               }
             }
 

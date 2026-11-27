@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -91,7 +92,7 @@ struct Lp {
     return agg + up;
   }
   static inline CTYPE finish(const CTYPE& agg, const CTYPE& p) {
-    return std::pow(agg, 1.0 / p);
+    return std::pow(agg, 1.0 / static_cast<double>(p));
   }
 };
 

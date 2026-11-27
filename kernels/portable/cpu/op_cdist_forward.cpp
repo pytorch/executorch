@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -106,7 +107,7 @@ void cdist(const Tensor& x1, const Tensor& x2, Tensor& out, double p) {
     cdist<CTYPE, L1<CTYPE>>(x1, x2, out, p);
   } else if (p == 2.0) {
     cdist<CTYPE, L2<CTYPE>>(x1, x2, out, p);
-  } else if (p == INFINITY) {
+  } else if (p == static_cast<double>(INFINITY)) {
     cdist<CTYPE, Linf<CTYPE>>(x1, x2, out, p);
   } else {
     cdist<CTYPE, Lp<CTYPE>>(x1, x2, out, p);
