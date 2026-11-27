@@ -423,8 +423,8 @@ class TestQNN(unittest.TestCase):
                     source_time_scale=TimeScale.CYCLES,
                     target_time_scale=TimeScale.CYCLES,
                 )
-                self.assertTrue(
-                    len(inspector.to_dataframe().index) >= expected_profile_events
+                self.assertEqual(
+                    len(inspector.to_dataframe().index), expected_profile_events
                 )
 
             def validate_heap_profile():
