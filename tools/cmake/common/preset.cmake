@@ -116,13 +116,91 @@ macro(load_build_preset)
   # try to determine a preset file.
 endmacro()
 
+# Presets may cache boolean literals like OFF as STRING values before the final
+# cache type is known. Treat CMake false literals as disabled while keeping real
+# selectors and paths enabled.
+function(is_nonfalse_cmake_string VALUE OUT_VAR)
+  string(TOUPPER "${VALUE}" _value_upper)
+  if("${VALUE}" STREQUAL ""
+     OR "${_value_upper}" STREQUAL "0"
+     OR "${_value_upper}" STREQUAL "FALSE"
+     OR "${_value_upper}" STREQUAL "OFF"
+     OR "${_value_upper}" STREQUAL "NO"
+     OR "${_value_upper}" STREQUAL "N"
+     OR "${_value_upper}" STREQUAL "IGNORE"
+     OR "${_value_upper}" STREQUAL "NOTFOUND"
+     OR "${_value_upper}" MATCHES ".*-NOTFOUND$"
+  )
+    set(${OUT_VAR}
+        FALSE
+        PARENT_SCOPE
+    )
+  else()
+    set(${OUT_VAR}
+        TRUE
+        PARENT_SCOPE
+    )
+  endif()
+endfunction()
+
 # Check if the required options are set.
+function(is_option_enabled NAME OUT_VAR)
+  if(NOT DEFINED ${NAME} AND NOT DEFINED CACHE{${NAME}})
+    set(${OUT_VAR}
+        FALSE
+        PARENT_SCOPE
+    )
+    return()
+  endif()
+
+  get_property(
+    _option_type_set
+    CACHE ${NAME}
+    PROPERTY TYPE
+    SET
+  )
+  if(_option_type_set)
+    get_property(
+      _option_type
+      CACHE ${NAME}
+      PROPERTY TYPE
+    )
+    if("${_option_type}" STREQUAL "BOOL")
+      if(${NAME})
+        set(${OUT_VAR}
+            TRUE
+            PARENT_SCOPE
+        )
+      else()
+        set(${OUT_VAR}
+            FALSE
+            PARENT_SCOPE
+        )
+      endif()
+    else()
+      is_nonfalse_cmake_string("${${NAME}}" _string_option_enabled)
+      set(${OUT_VAR}
+          ${_string_option_enabled}
+          PARENT_SCOPE
+      )
+    endif()
+  else()
+    is_nonfalse_cmake_string("${${NAME}}" _string_option_enabled)
+    set(${OUT_VAR}
+        ${_string_option_enabled}
+        PARENT_SCOPE
+    )
+  endif()
+endfunction()
+
 function(check_required_options_on)
   cmake_parse_arguments(ARG "" "IF_ON" "REQUIRES" ${ARGN})
 
-  if(${${ARG_IF_ON}})
+  is_option_enabled(${ARG_IF_ON} _if_on)
+  if(_if_on)
     foreach(required ${ARG_REQUIRES})
-      if(NOT ${${required}})
+      is_option_enabled(${required} _required_on)
+      if(NOT _required_on)
         message(FATAL_ERROR "Use of '${ARG_IF_ON}' requires '${required}'")
       endif()
     endforeach()
@@ -133,9 +211,11 @@ endfunction()
 function(check_conflicting_options_on)
   cmake_parse_arguments(ARG "" "IF_ON" "CONFLICTS_WITH" ${ARGN})
 
-  if(${${ARG_IF_ON}})
+  is_option_enabled(${ARG_IF_ON} _if_on)
+  if(_if_on)
     foreach(conflict ${ARG_CONFLICTS_WITH})
-      if(${${conflict}})
+      is_option_enabled(${conflict} _conflict_on)
+      if(_conflict_on)
         message(FATAL_ERROR "Both '${ARG_IF_ON}' and '${conflict}' can't be ON")
       endif()
     endforeach()
