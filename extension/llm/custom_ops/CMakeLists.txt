@@ -154,7 +154,9 @@ if(EXECUTORCH_BUILD_KERNELS_LLM_QUANTIZED_MOE_OPTIMIZED)
   target_link_libraries(custom_ops PUBLIC ${quantized_moe_torchao_target})
 endif()
 
-target_compile_options(custom_ops PUBLIC ${_common_compile_options})
+# PRIVATE: the -march flag above must not reach targets that link custom_ops
+# (e.g. executorch_jni).
+target_compile_options(custom_ops PRIVATE ${_common_compile_options})
 
 install(
   TARGETS custom_ops
