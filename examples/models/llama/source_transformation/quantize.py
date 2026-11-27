@@ -777,7 +777,16 @@ def get_quant_embedding_transform(
     use_shared_embedding: bool = False,
     quantize_with_hqq: bool = True,
     range_learning: bool = False,
+    shared_embedding_scale_dtype: Optional[torch.dtype] = None,
 ):
+    """`shared_embedding_scale_dtype` sets the scale dtype of a shared `torchao:`
+    table; `None` keeps the weight's."""
+    if shared_embedding_scale_dtype is not None and not (
+        use_shared_embedding and embedding_quantize.startswith("torchao:")
+    ):
+        raise ValueError(
+            "shared_embedding_scale_dtype applies only to shared torchao: embeddings"
+        )
     if embedding_quantize.startswith("torchao:"):
         from torchao.prototype.quantization.embedding.api import (
             EmbeddingQuantizer,
@@ -816,11 +825,18 @@ def get_quant_embedding_transform(
                         use_fallback=False,
                     ).quantize(model)
                 else:
+                    # OSS ExecuTorch's pinned TorchAO may predate `weight_scale_dtype`.
+                    scale_kwargs = (
+                        {}
+                        if shared_embedding_scale_dtype is None
+                        else {"weight_scale_dtype": shared_embedding_scale_dtype}
+                    )
                     TiedEmbeddingQuantizer(
                         weight_dtype=weight_dtype,
                         granularity=granularity,
                         mapping_type=mapping_type,
                         range_learning=range_learning,
+                        **scale_kwargs,
                     ).quantize(model)
             return model
 
