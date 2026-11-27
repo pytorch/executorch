@@ -60,6 +60,7 @@ fbcode_target(_kind = runtime.python_test,
         "//executorch/exir:pass_base",
         "//executorch/exir/backend/canonical_partitioners:canonical_partitioner_lib",
         "//executorch/exir/dialects:lib",
+        "//executorch/exir/passes:constant_prop_pass",
     ],
     external_deps = [
         "libtorch",
