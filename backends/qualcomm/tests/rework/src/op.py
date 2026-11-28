@@ -860,6 +860,25 @@ class BatchNorm2d(torch.nn.Module):
                         metrics=metrics,
                     )
 
+        with subtests.test(msg="near_zero_running_var"):
+            # Channel 0's variance is far below eps, so its scale depends on
+            # the op's eps (1e-5 here). The small weight keeps both channels in
+            # the same output range for the quantized configs.
+            module = __class__(n_features=2, affine=True).eval()
+            with torch.no_grad():
+                module.batchnorm.eps = 1e-5
+                module.batchnorm.running_var[0] = 1e-8
+                module.batchnorm.weight[0] = 1e-2
+            with expected as metrics:
+                export_and_verify(
+                    module=module,
+                    inputs=inputs,
+                    qnn_config=qnn_config,
+                    quantizer=quantizer,
+                    compile_specs=compile_spec,
+                    metrics=metrics,
+                )
+
 
 class BitwiseOp(torch.nn.Module):
     def __init__(self, op):
