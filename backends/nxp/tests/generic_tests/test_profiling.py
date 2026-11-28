@@ -18,11 +18,7 @@ from executorch.backends.nxp.tests.comparators.numerical_stats_comparator import
     NumericalStatsOutputComparator,
 )
 from executorch.backends.nxp.tests.graph_verifier import BaseGraphVerifier
-from executorch.backends.nxp.tests.nsys_testing import (
-    get_test_name,
-    lower_run_compare,
-    OUTPUTS_DIR,
-)
+from executorch.backends.nxp.tests.nsys_testing import get_test_dir, lower_run_compare
 
 from executorch.backends.nxp.tests.profiling_utils import (
     get_neutron_compiler_version,
@@ -67,7 +63,7 @@ def extract_map_from_logs(caplog):
     return None
 
 
-def inspector_check(test_name: str) -> None:
+def inspector_check(test_dir: str) -> None:
     """
     Validate ExecuTorch Inspector profiling output.
 
@@ -111,7 +107,7 @@ def inspector_check(test_name: str) -> None:
                 metadata_list.append("Invalid metadata size")
         return metadata_list
 
-    npu_results_path = os.path.join(OUTPUTS_DIR, test_name, "results_npu")
+    npu_results_path = os.path.join(test_dir, "results_npu")
     etrecord_path = os.path.join(npu_results_path, "etrecord.bin")
     etdump_path = os.path.join(npu_results_path, "trace.etdump")
 
@@ -293,7 +289,7 @@ class TestProfiling:
             10: (21,),  # Slice
             11: (),  # Neutron Dump
         }
-        inspector_check(get_test_name(request))
+        inspector_check(get_test_dir(request))
 
     def test__cifar_batch_2(self, caplog, request):
         caplog.set_level(logging.INFO)
@@ -464,7 +460,7 @@ class TestProfiling:
             27: (45,),  # Slice (FullyConnected)
             28: (),  # Neutron Dump
         }
-        inspector_check(get_test_name(request))
+        inspector_check(get_test_dir(request))
 
     def test__ds_cnn(self, caplog, request):
         # Depthwise Separable CNN used for keyword spotting in MLCommons Tiny.
