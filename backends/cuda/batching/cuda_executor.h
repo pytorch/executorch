@@ -26,6 +26,7 @@
 #include <string>
 #include <vector>
 
+#include <executorch/backends/cuda/batching/kv_capacity.h>
 #include <executorch/backends/cuda/batching/step_plan.h>
 #include <executorch/backends/cuda/runtime/cuda_kv_cache.h>
 #include <executorch/extension/llm/batching/executor.h>
@@ -83,6 +84,25 @@ struct CudaExecutorConfig {
   ::executorch::extension::Module::LoadMode load_mode =
       ::executorch::extension::Module::LoadMode::MmapUseMlockIgnoreErrors;
   int max_sessions = 1;
+  // What max_sessions is made of, for the capacity diagnostics. Optional; when
+  // given it must total max_sessions.
+  KvReservations reservations;
+  // Called on the creating thread, after the executor logs it, with a KV
+  // capacity report:
+  //  - kCells: a requested limit the cell pool cannot hold, for sessions within
+  //    the cell layout's limit;
+  //  - kNoBudget: automatic context mode leaves no token per session;
+  //  - kSessionLimit: more sessions than the layout tracks; reported at the
+  //    cell check when the cells also fall short or no automatic budget
+  //    remains, else once the cache is built, against its own session count;
+  //  - kAutomatic: automatic context mode resolved a budget for sessions
+  //    within the layout's limit; it is withheld for sessions past it.
+  // create() may fail after a kAutomatic report, or before any report, on a
+  // check that is not about KV capacity. Not reported: refusals before the
+  // program's cache layout is known (invalid session limits, a reservation
+  // breakdown that does not total max_sessions, a token limit past the
+  // model's context).
+  std::function<void(const KvCapacityReport&)> capacity_report;
   // Zero divides the available cell pool across sessions, capped by context.
   int max_session_tokens = 0;
   int kv_dtype = static_cast<int>(::executorch::aten::ScalarType::BFloat16);

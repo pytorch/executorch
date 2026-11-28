@@ -18,6 +18,11 @@ struct MuseGlimmerBackendConfig {
   std::string data_path;
   std::string pos_embed_path;
   int max_sessions = 4;
+  // What max_sessions is made of, for capacity diagnostics: all zero, or
+  // totaling max_sessions (CudaExecutor refuses any other breakdown).
+  int live_sessions = 0;
+  int prefix_entries = 0;
+  int capture_slots = 0;
   int max_session_tokens = 0; // zero uses published context
   int max_vision_patches = 4096;
   MuseGlimmerImageLimits image_limits;

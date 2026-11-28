@@ -14,6 +14,7 @@ fbcode_target(
     exported_headers = [
         "backend_factory.h",
         "cuda_dflash_executor.h",
+        "kv_capacity_notes.h",
         "model_embeddings.h",
     ],
     visibility = ["PUBLIC"],

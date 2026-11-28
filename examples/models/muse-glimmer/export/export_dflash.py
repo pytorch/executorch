@@ -16,6 +16,7 @@ import argparse
 import gc
 import json
 import logging
+import warnings
 from typing import TYPE_CHECKING
 
 import torch
@@ -1175,7 +1176,9 @@ def main() -> None:
         "--max-seq-len",
         type=int,
         default=131072,
-        help="KV cache size for target model.",
+        help="KV cache size for the target model. Ignored with "
+        "--use-offgraph-kv-cache, which uses the checkpoint's native context "
+        "(with a warning when this differs from the default).",
     )
     parser.add_argument(
         "--mmproj",
@@ -1224,6 +1227,14 @@ def main() -> None:
         parser.error("The CUDA DFlash path currently requires bfloat16 activations.")
 
     activation_dtype = common.ACTIVATION_DTYPES[args.activation_dtype]
+    if args.use_offgraph_kv_cache and args.max_seq_len != parser.get_default(
+        "max_seq_len"
+    ):
+        warnings.warn(
+            f"--max-seq-len={args.max_seq_len} is ignored for off-graph export; "
+            "using the checkpoint's native context limit.",
+            stacklevel=2,
+        )
 
     export_dflash(
         target_gguf=args.target_gguf,

@@ -529,14 +529,29 @@ TEST_P(CudaExecutorTest, ConfigAutoBudgetRespectsContextAndPaddingCell) {
     config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
     config.load_mode = Module::LoadMode::File;
     config.max_sessions = sessions;
+    config.reservations = {sessions, 0, 0};
     config.initial_capacity = 16;
     config.options.cuda_graph_for_static_methods = false;
+    std::vector<cb::KvCapacityReport> reports;
+    config.capacity_report = [&](const cb::KvCapacityReport& report) {
+      reports.push_back(report);
+    };
     auto created = cb::CudaExecutor::create(config);
     ASSERT_EQ(created.error(), Error::Ok);
     auto exec = std::move(created.get());
     ASSERT_NE(exec, nullptr);
     EXPECT_EQ(exec->max_session_tokens(), expected_budget);
     EXPECT_LT(exec->max_session_tokens() * sessions, kMaxCells);
+    // Automatic context mode reports the budget it resolved.
+    ASSERT_EQ(reports.size(), 1u);
+    EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kAutomatic);
+    EXPECT_TRUE(reports[0].automatic);
+    EXPECT_FALSE(reports[0].sequence_layout);
+    EXPECT_EQ(reports[0].sessions, sessions);
+    EXPECT_EQ(reports[0].reservations.live_sessions, sessions);
+    EXPECT_EQ(reports[0].session_tokens, expected_budget);
+    EXPECT_EQ(reports[0].context_length, kMaxContext);
+    EXPECT_EQ(reports[0].cells, kMaxCells);
     // The toy export publishes a 32-entry vocabulary.
     EXPECT_EQ(exec->vocab_size(), 32);
   }
@@ -582,16 +597,188 @@ TEST_P(CudaExecutorTest, ConfigRefusesOvercommitAndLegacyZeroBudget) {
   config.max_session_tokens = kMaxContext;
   config.initial_capacity = 16;
   config.options.cuda_graph_for_static_methods = false;
+  std::vector<cb::KvCapacityReport> reports;
+  config.capacity_report = [&](const cb::KvCapacityReport& report) {
+    reports.push_back(report);
+  };
+  // 8 x 64 + 1 = 513 cells needed, 256 available: the cell pool.
+  config.reservations = {4, 2, 2};
   EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kCells);
+  EXPECT_EQ(reports[0].sessions, 8);
+  EXPECT_EQ(reports[0].reservations.prefix_entries, 2);
+  EXPECT_EQ(reports[0].session_tokens, kMaxContext);
+  EXPECT_EQ(reports[0].cells, kMaxCells);
+  EXPECT_EQ(reports[0].session_limit, 64);
+  EXPECT_EQ(cb::required_cells(reports[0]), 513);
+  EXPECT_EQ(cb::fitting_session_tokens(reports[0]), 31);
+  // The toy's ring layer and geometry reach the report.
+  EXPECT_TRUE(reports[0].facts.has_windowed_layers);
+  EXPECT_GT(reports[0].facts.bytes_per_cell, 0);
 
-  // Reserving the padding row leaves no token per session at 256 sessions.
+  // The cells hold 65 one-token sessions, but the cell layout tracks at most
+  // 64 sequences: reported after the cache is built.
+  reports.clear();
+  config.max_sessions = 65;
+  config.max_session_tokens = 1;
+  config.reservations = {1, 48, 16};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_FALSE(reports[0].sequence_layout);
+  EXPECT_EQ(reports[0].session_limit, 64);
+  EXPECT_EQ(reports[0].sessions, 65);
+
+  // Too many sessions for the cells as well: the session limit leads.
+  reports.clear();
+  config.max_session_tokens = kMaxContext;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+
+  // A breakdown that does not total the sessions is refused before loading.
+  reports.clear();
+  config.max_sessions = 8;
+  config.reservations = {4, 2, 1};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  config.reservations = {4, -2, 6};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  EXPECT_TRUE(reports.empty());
+  config.reservations = {};
+
+  // Reserving the padding row leaves no token per session at 256 sessions,
+  // which is also past the session limit, so that is reported.
   config.max_sessions = kMaxCells;
   config.max_session_tokens = 0;
   EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_EQ(reports[0].session_tokens, 0);
   EXPECT_EQ(
       cb::CudaExecutor::create(module(), 4, 0, kBFloat16, 16, {}).error(),
       Error::InvalidArgument);
 }
+
+TEST_P(CudaExecutorTest, ReportsOnlyAutomaticBudgetsAndRefusals) {
+  cb::CudaExecutorConfig config;
+  config.model_path = dir_ + "/model.pte";
+  config.data_files = {dir_ + "/aoti_cuda_blob.ptd"};
+  config.load_mode = Module::LoadMode::File;
+  config.initial_capacity = 16;
+  config.options.cuda_graph_for_static_methods = false;
+  std::vector<cb::KvCapacityReport> reports;
+  config.capacity_report = [&](const cb::KvCapacityReport& report) {
+    reports.push_back(report);
+  };
+
+  // An explicit limit that fits is not reported.
+  config.max_sessions = 4;
+  config.max_session_tokens = 32;
+  ASSERT_EQ(cb::CudaExecutor::create(config).error(), Error::Ok);
+  EXPECT_TRUE(reports.empty());
+
+  // 65 automatic sessions would get (256 - 1) / 65 = 3 tokens each, but the
+  // cell layout tracks at most 64: one session-limit report, no budget report.
+  config.max_sessions = 65;
+  config.max_session_tokens = 0;
+  config.reservations = {1, 48, 16};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_TRUE(reports[0].automatic);
+  EXPECT_EQ(reports[0].session_tokens, 3);
+  EXPECT_EQ(reports[0].session_limit, 64);
+
+  // Limits refused before the cache is known are not reported.
+  reports.clear();
+  config.max_sessions = 4;
+  config.max_session_tokens = kMaxContext + 1;
+  config.reservations = {};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  EXPECT_TRUE(reports.empty());
+}
+
+// The toy's batched-sequence artifact: 4 sequence columns of 64 rows.
+TEST(CudaExecutorSequenceTest, ReportsTheColumnsAsTheSessionLimit) {
+  int devices = 0;
+  if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
+    GTEST_SKIP() << "CUDA device required";
+  }
+  const char* dir = std::getenv("ET_CUDA_BATCHING_TOY_DIR");
+  if (dir == nullptr || *dir == '\0') {
+    GTEST_SKIP() << "ET_CUDA_BATCHING_TOY_DIR is not set; run "
+                    "export_toy_decoder.py first";
+  }
+  constexpr int kColumns = 4;
+  const std::string toy = std::string(dir) + "/sequence";
+  cb::CudaExecutorConfig config;
+  config.model_path = toy + "/model.pte";
+  config.data_files = {toy + "/aoti_cuda_blob.ptd"};
+  config.load_mode = Module::LoadMode::File;
+  config.initial_capacity = 16;
+  config.options.cuda_graph_for_static_methods = false;
+  std::vector<cb::KvCapacityReport> reports;
+  config.capacity_report = [&](const cb::KvCapacityReport& report) {
+    reports.push_back(report);
+  };
+
+  // Automatic context within the columns: each session gets the context.
+  config.max_sessions = kColumns;
+  config.max_session_tokens = 0;
+  ASSERT_EQ(cb::CudaExecutor::create(config).error(), Error::Ok);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kAutomatic);
+  EXPECT_TRUE(reports[0].sequence_layout);
+  EXPECT_EQ(reports[0].session_tokens, kMaxContext);
+  EXPECT_EQ(reports[0].session_limit, kColumns);
+
+  // One session past the columns in automatic context mode: no budget report,
+  // one session-limit report naming the columns.
+  reports.clear();
+  config.max_sessions = kColumns + 1;
+  config.reservations = {1, 3, 1};
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_TRUE(reports[0].sequence_layout);
+  EXPECT_TRUE(reports[0].automatic);
+  EXPECT_EQ(reports[0].session_limit, kColumns);
+  EXPECT_EQ(reports[0].reservations.prefix_entries, 3);
+
+  // The same with an explicit limit.
+  reports.clear();
+  config.max_session_tokens = 32;
+  EXPECT_EQ(cb::CudaExecutor::create(config).error(), Error::InvalidArgument);
+  ASSERT_EQ(reports.size(), 1u);
+  EXPECT_EQ(reports[0].outcome, cb::KvAdmission::kSessionLimit);
+  EXPECT_FALSE(reports[0].automatic);
+  EXPECT_EQ(reports[0].session_tokens, 32);
+  EXPECT_EQ(reports[0].session_limit, kColumns);
+}
+
+// Generation on the toy's batched-sequence artifact, within its 4 columns.
+class CudaExecutorSequenceGenerationTest : public CudaExecutorTest {};
+
+TEST_P(CudaExecutorSequenceGenerationTest, GenerationsMatchEagerGreedy) {
+  auto exec = executor();
+  ASSERT_NE(exec, nullptr);
+  batching::Runner runner(*exec, scheduler());
+  const auto generations = generate(runner, prompts());
+  runner.shutdown();
+  ASSERT_EQ(generations.size(), cases_.size());
+  for (size_t i = 0; i < cases_.size(); ++i) {
+    EXPECT_EQ(generations[i].reason, batching::FinishReason::NewTokenLimit)
+        << i;
+    EXPECT_EQ(generations[i].tokens, cases_[i].expected) << "prompt " << i;
+  }
+  EXPECT_EQ(runner.metrics().steps_failed, 0u);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Sequence,
+    CudaExecutorSequenceGenerationTest,
+    ::testing::Values("sequence"));
 
 INSTANTIATE_TEST_SUITE_P(
     Toy,

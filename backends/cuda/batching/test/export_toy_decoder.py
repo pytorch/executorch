@@ -6,10 +6,10 @@
 
 """Export the toy decoder the CudaExecutor GPU test runs.
 
-Writes two artifacts, each ``model.pte`` and ``aoti_cuda_blob.ptd`` -- a
+Writes these artifacts, each ``model.pte`` and ``aoti_cuda_blob.ptd`` -- a
 two-layer decoder (one full-history layer, one sliding-window layer) exported
 as the static ``forward_{N}`` methods and the dynamic ``forward_others``
-CudaExecutor drives, lowered in the cell layout:
+CudaExecutor drives, lowered in the cell layout unless noted:
 
 - ``dense/``: forward_{1,2,4,8}, and forward_others over [8, 32] tokens;
 - ``sparse/``: forward_{1,4}, and forward_others over [4, 32] tokens selecting
@@ -21,6 +21,8 @@ CudaExecutor drives, lowered in the cell layout:
 - ``mg_widths/``: Muse Glimmer's method set: forward_{1,2,4,...,64}, and
   forward_others from 64 tokens selecting at least five rows, over longer
   prompts, so steps of every width up to 65 can be formed.
+- ``sequence/``: dense's methods lowered in the batched-sequence layout, with
+  ``SEQUENCE_COLUMNS`` private sequence columns of up to ``MAX_CONTEXT`` rows.
 
 Each has ``expected.txt``: one ``prompt;continuation`` line per prompt, the
 greedy continuation computed eagerly with the neutral reference cache.
@@ -50,6 +52,7 @@ WINDOWS = (0, 4)  # layer 0 keeps its whole history, layer 1 a window of 4
 MAX_CONTEXT = 64
 MAX_STEP = 32  # forward_others' widest step: longer batches slice
 MAX_CELLS = 256
+SEQUENCE_COLUMNS = 4  # the sequence artifact's resident sequences
 EMBED_SCALE = 4.0
 
 PROMPTS = ([3], [5, 9, 1], [7, 2, 2, 8, 4, 6, 1], list(range(1, 21)))
@@ -97,7 +100,28 @@ class ToyDecoder(nn.Module):
         return self.head(x[:, logits_to_keep, :])[0].float()
 
 
-def _manifest(max_step: int, max_cells: int) -> str:
+def _manifest(max_step: int, max_cells: int, max_seqs: int = 0) -> str:
+    layers = [
+        {"layer_id": i, "policy": "ring" if w else "flat", "window": w}
+        for i, w in enumerate(WINDOWS)
+    ]
+    if max_seqs:
+        from executorch.backends.cuda.passes.lower_offgraph_kv import (
+            batched_sequence_max_segments,
+        )
+
+        return json.dumps(
+            {
+                "version": 1,
+                "layout": "batched-sequence",
+                "maximum_capacity": MAX_CONTEXT,
+                "max_write": max_step,
+                "max_seqs": max_seqs,
+                "max_segments": batched_sequence_max_segments(max_seqs),
+                "causal": True,
+                "layers": layers,
+            }
+        )
     return json.dumps(
         {
             "version": 1,
@@ -105,10 +129,7 @@ def _manifest(max_step: int, max_cells: int) -> str:
             "maximum_capacity": max_cells,
             "max_cells": max_cells,
             "max_write": max_step,
-            "layers": [
-                {"layer_id": i, "policy": "ring" if w else "flat", "window": w}
-                for i, w in enumerate(WINDOWS)
-            ],
+            "layers": layers,
         }
     )
 
@@ -172,6 +193,7 @@ ARTIFACTS = {
             for i, n in enumerate((1, 3, 7, 12, 20, 28, 40, 50))
         ),
     },
+    "sequence": {"static": (1, 2, 4, 8), "min_rows": 1, "max_seqs": SEQUENCE_COLUMNS},
 }
 
 
@@ -184,6 +206,7 @@ def export(
     max_cells: int = MAX_CELLS,
     prompts=PROMPTS,
     new_tokens: int = NEW_TOKENS,
+    max_seqs: int = 0,
 ) -> None:
     import torch._inductor.config as inductor_config
     from executorch.backends.cuda.cuda_backend import CudaBackend
@@ -268,7 +291,8 @@ def export(
                 CudaBackend.generate_method_name_compile_spec(name),
                 CompileSpec("low_memory_mode", b"ON"),
                 CompileSpec(
-                    OFFGRAPH_KV_COMPILE_SPEC, _manifest(max_step, max_cells).encode()
+                    OFFGRAPH_KV_COMPILE_SPEC,
+                    _manifest(max_step, max_cells, max_seqs).encode(),
                 ),
                 CompileSpec(OFFGRAPH_KV_STEP_WIDTH_COMPILE_SPEC, b"1:0"),
             ]
@@ -282,8 +306,12 @@ def export(
         **write_cache_geometry(
             [N_KV_HEADS] * len(WINDOWS), [HEAD_DIM] * len(WINDOWS), list(WINDOWS)
         ),
-        "get_offgraph_kv_max_cells": max_cells,
     }
+    # The sequence layout publishes its sequence columns instead of cells.
+    if max_seqs:
+        constant_methods["get_offgraph_kv_max_seqs"] = max_seqs
+    else:
+        constant_methods["get_offgraph_kv_max_cells"] = max_cells
     if min_rows > 1:
         constant_methods["get_min_prefill_chunk"] = min_rows
     # With device sampling the forwards' logits stay on the device, planned in
@@ -339,6 +367,7 @@ def main() -> None:
             artifact.get("max_cells", MAX_CELLS),
             artifact.get("prompts", PROMPTS),
             artifact.get("new_tokens", NEW_TOKENS),
+            artifact.get("max_seqs", 0),
         )
 
 

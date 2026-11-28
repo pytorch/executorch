@@ -407,7 +407,8 @@ explicit limit. Their total reservation must leave one
 cell for padded writes within the exported `--max-cells`. More capture slots
 reduce the context available per session in the native worker's automatic
 context mode. This Python launcher requires an explicit `--max-context`;
-reduce the context or slot counts if they do not fit.
+reduce the context or slot counts if they do not fit. See
+[KV capacity and long contexts](#kv-capacity-and-long-contexts) to size an export.
 The cell pool tracks at most 64 resident sessions. Unlike on MLX, prefix snapshots
 clone a session's cells by reference, sharing the prompt's KV rather than copying it.
 
@@ -473,3 +474,82 @@ ATEM opening tag are emitted as ordinary text.
 With `ignore_eos`, reasoning-token details are omitted
 because the generated IDs can contain hidden post-EOS text; total completion
 usage still includes all generated tokens.
+
+### KV capacity and long contexts
+
+`--max-seq-len` bounds token positions; it is not the context each session can
+use. With the default cell layout, `--max-cells` is one pool shared by every
+resident session, each of which may fill its whole `--max-context` budget:
+
+```text
+resident sessions = --max-sessions + --prefix-cache-entries + capture slots
+cells needed      = resident sessions x --max-context + 1 padding cell
+max --max-context = min(--max-seq-len, floor((--max-cells - 1) / resident sessions))
+bytes per cell    = layers x 2 (K and V) x KV heads x head dim x KV element bytes
+```
+
+For example, Muse Glimmer 30B has 52 layers, 2 KV heads and head dim 128, so
+BF16 K/V takes 52 x 2 x 2 x 128 x 2 = 53248 bytes per cell. With 4 sessions, 8
+prefix entries and 4 capture slots (16 resident sessions), `--max-cells 131072`
+serves at most floor(131071 / 16) = 8191 tokens per session. Giving each
+131072 tokens needs 16 x 131072 + 1 = 2097153 cells, about 104 GiB of K/V: more
+than an 80 GB GPU holds before weights. The pool grows on demand up to
+`--max-cells`, and also keeps one `--max-step-tokens` x `--max-cells` byte mask
+per distinct attention window. The cell layout also tracks at most 64 resident
+sessions, whatever its cells. Without an explicit context (the native worker's
+default `--max_session_tokens 0`), the worker logs the per-session context it
+resolved and this breakdown at startup. When a configuration does not fit, the
+startup error shows the breakdown and which pool refused. A cell shortfall also
+shows the cells needed and available and how many tokens per session the pool
+holds; a session-limit error shows the layout's limit and how many sessions
+fit it; a zero automatic budget shows the cells the sessions need at minimum.
+
+A DFlash export (`export_dflash`) adds a draft pool of `--draft-max-cells`
+(default `--max-cells`) cells, which also keeps every draft owner's block while
+drafting. Its off-graph export (MLX or CUDA batching) loads the target with
+the checkpoint's native context limit and ignores `--max-seq-len`, warning when
+the value differs from the default, so the program context is the native one.
+The draft caps the context again, and the context must exceed the block:
+
+```text
+draft cells needed = resident sessions x --max-context
+                     + --max-draft-owners x block + 1
+max --max-context  = min(native context,
+                         floor((--max-cells - 1) / resident sessions),
+                         floor((--draft-max-cells - 1 - --max-draft-owners x block)
+                               / resident sessions))
+```
+
+The draft's K/V adds `--draft-max-cells` x its own bytes per cell. With
+`--max-cells 131072`, 4 owners of 16-token blocks and 16 resident sessions, the
+draft pool at its default size (131072 cells) serves
+floor((131072 - 1 - 64) / 16) = 8187 tokens per session, and
+`--draft-max-cells 32768` serves 2043.
+The export prints these limits and both pools' K/V before lowering.
+
+For long contexts on sliding-window models such as Muse Glimmer, prefer
+`--kv-layout sequence --max-kv-seqs N`, with N at least the resident session
+count. Each session gets a private column of up to the program context
+(`export_solo`'s `--max-seq-len`, or the native context for `export_dflash`),
+plus one scratch column. `export_dflash` accepts the layout too and gives the
+draft N + 1 columns of its own per-session rows, fixed at export: for a CUDA
+batching export, the draft GGUF's `dflash.context_length` (default 131072),
+whatever the target's context. A DFlash session then holds at most
+min(program context, draft rows - block) tokens, and a larger
+`--max_session_tokens`/`--max-context` is refused; the export prints the
+draft's columns and K/V. For `export_solo`, global layers keep `--max-seq-len`
+rows per column, but sliding-window layers keep only a ring of
+`window + --max-step-tokens - 1` rows:
+
+```text
+bytes = (N + 1) x 2 (K and V) x KV heads x head dim x KV element bytes
+        x (sum over global layers of --max-seq-len
+           + sum over sliding layers of min(--max-seq-len, window + --max-step-tokens - 1))
+```
+
+With N = 16, `--max-seq-len 131072` and `--max-step-tokens 512`, Muse Glimmer's
+13 global layers and 39 sliding layers (window 2048) need
+17 x 1024 x (13 x 131072 + 39 x 2559) bytes, about 29.2 GiB at full length.
+Rows grow on demand to the longest resident session, in every column. The cell
+layout still suits many short sessions: its prefix snapshots share cells by
+reference, whereas the sequence layout copies a prefix into its own column.

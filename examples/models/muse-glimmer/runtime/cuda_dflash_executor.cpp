@@ -7,6 +7,7 @@
  */
 #include <executorch/examples/models/muse-glimmer/runtime/cuda_dflash_executor.h>
 
+#include <executorch/examples/models/muse-glimmer/runtime/kv_capacity_notes.h>
 #include <executorch/examples/models/muse-glimmer/runtime/model_embeddings.h>
 
 #include <cuda_runtime.h>
@@ -549,6 +550,14 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
   if (!config.data_path.empty()) {
     target_config.data_files.push_back(config.data_path);
   }
+  target_config.reservations = {
+      config.live_sessions, config.prefix_entries, config.capture_slots};
+  // Notes on the target pool, which a DFlash export pairs with a draft pool.
+  target_config.capacity_report = [](const cb::KvCapacityReport& report) {
+    kv_notes::log_notes(
+        kv_notes::target_notes(report, /*dflash=*/true),
+        report.outcome == cb::KvAdmission::kAutomatic);
+  };
   target_config.max_sessions = config.max_sessions;
   target_config.max_session_tokens = config.max_session_tokens;
   for (int n = 1; n <= df::kOwnerLimit; ++n) {
@@ -663,17 +672,35 @@ Result<MuseGlimmerBackend> MuseGlimmerCudaDFlashExecutor::create(
       "DFlash draft packed tensor ABI mismatch");
   ET_ASSIGN_OR_RETURN(geometry, draft_geometry(module, block));
   const int temporary = max_owners * block;
-  // A history column holds its context and, while drafting, its own block.
-  const int draft_budget = sequence_layout
-      ? max_cells - block
-      : (max_cells - 1 - temporary) / config.max_sessions;
-  const int max_context = std::min(target->max_session_tokens(), draft_budget);
   ET_CHECK_OR_RETURN_ERROR(
-      max_context > block && draft_tokens.sizes()[0] == max_owners &&
+      draft_tokens.sizes()[0] == max_owners &&
           draft_hidden.sizes()[1] >= max_write - temporary &&
-          draft_positions.sizes()[0] >= max_write &&
-          (!config.max_session_tokens ||
-           max_context == config.max_session_tokens),
+          draft_positions.sizes()[0] >= max_write,
+      InvalidProgram,
+      "DFlash draft packed tensors do not match the published owners and step "
+      "width");
+  // The draft pool as the program publishes it; draft_admission() gives each
+  // session its rows less the block, or the shared cells less every owner's
+  // block and the padding cell.
+  const kv_notes::DraftPool pool{sequence_layout, max_cells, max_owners, block};
+  const kv_notes::DraftAdmission admission = kv_notes::draft_admission(
+      config.max_sessions,
+      config.max_session_tokens,
+      target->max_session_tokens(),
+      pool);
+  const int max_context = admission.max_context;
+  // Notes on the draft pool when it limits or refuses the sessions.
+  kv_notes::log_notes(
+      kv_notes::draft_notes(
+          config.max_sessions,
+          config.max_session_tokens,
+          target->max_session_tokens(),
+          pool,
+          admission,
+          target_config.reservations),
+      admission.fits);
+  ET_CHECK_OR_RETURN_ERROR(
+      admission.fits,
       InvalidArgument,
       "DFlash draft pool cannot hold resident contexts plus temporary owner blocks");
   cache::CacheConfig cache_config{};
