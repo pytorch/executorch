@@ -216,6 +216,18 @@ class QnnOperatorSupport(OperatorSupportBase):
                 node, self.soc_info.htp_info.vtcm_size_in_mb, self.phase
             )
 
+        if node.target in constant_operator:
+            # Built as a static tensor, so its value cannot come from a graph node.
+            value_inputs = set(node.all_input_nodes)
+            if node.target == exir_ops.edge.aten.full_like.default:
+                # full_like's first argument only supplies the shape
+                value_inputs.discard(node.args[0])
+            if value_inputs:
+                logger.info(
+                    f"[{self.phase}] {node.target.__name__} | Skipped, value comes from a graph node rather than a literal"
+                )
+                return False
+
         supported = False
         if node.target.__name__ not in self.node_visitors:
             logger.info(
