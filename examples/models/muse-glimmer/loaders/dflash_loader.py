@@ -12,15 +12,24 @@ export time.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 import torch
 import torch.nn as nn
 
+if TYPE_CHECKING:
+    from executorch.examples.models.muse_glimmer.model.dflash_model import DFlashConfig
 
 # GGUF pattern → model FQN pattern. ``{}`` is the layer index.
 _KEY_MAP = {
     "fc.weight": "fc.weight",
+    "selector_hidden.weight": "candidate_selector.hidden_projection.weight",
+    "selector_predecessor.weight": "candidate_selector.predecessor_codebook.weight",
+    "selector_successor.weight": "candidate_selector.successor_codebook.weight",
+    "blk.{}.attn_conv_base": "layers.{}.attention_conv.base_kernel",
+    "blk.{}.attn_conv_proj.weight": "layers.{}.attention_conv.kernel_projection.weight",
+    "blk.{}.ffn_conv_base": "layers.{}.mlp_conv.base_kernel",
+    "blk.{}.ffn_conv_proj.weight": "layers.{}.mlp_conv.kernel_projection.weight",
     "enc.output_norm.weight": "hidden_norm.weight",
     "output_norm.weight": "norm.weight",
     "blk.{}.attn_q.weight": "layers.{}.self_attn.q_proj.weight",
@@ -72,6 +81,31 @@ def _validate_no_meta(model: nn.Module) -> None:
         p.requires_grad_(False)
 
 
+def read_dflash_gguf_config(gguf_path: str) -> DFlashConfig:
+    """Read and validate draft metadata without loading checkpoint weights."""
+    from executorch.examples.models.muse_glimmer.model.dflash_model import DFlashConfig
+    from gguf import GGUFReader
+
+    reader = GGUFReader(gguf_path)
+    metadata = {
+        key: field.contents()
+        for key, field in reader.fields.items()
+        if key.startswith("dflash.") or key == "tokenizer.ggml.mask_token_id"
+    }
+    config = DFlashConfig.from_gguf_metadata(metadata)
+    if config.selector_top_k:
+        unknown = [
+            tensor.name
+            for tensor in reader.tensors
+            if tensor.name not in _IGNORED_KEYS
+            and dflash_gguf_to_model_key(tensor.name) is None
+        ]
+        if unknown:
+            raise ValueError(f"Unrecognized DFlash2 GGUF tensors: {unknown}")
+
+    return config
+
+
 def load_dflash_gguf(
     gguf_path: str,
     backend: str = "mlx",
@@ -81,37 +115,19 @@ def load_dflash_gguf(
     """Load a DFlash draft GGUF, remap keys, and return (model, config).
 
     Streams weights through ``load_checkpoint`` with a DFlash key remap. The
-    caller applies backend-specific packing after loading.
+    caller applies backend-specific packing after loading. ``max_seq_len`` sizes
+    runtime buffers; the config retains the checkpoint's context capacity.
 
     Returns ``(model, config)`` where config is a ``DFlashConfig``.
     """
     from executorch.examples.models.muse_glimmer.model.dflash_model import (
-        DFlashConfig,
         DFlashDraftModel,
     )
     from executorch.extension.llm.export.load import load_checkpoint
     from executorch.extension.llm.export.quant import to_default
 
-    # Read metadata from GGUF to build config
-    from gguf import GGUFReader, GGUFValueType
+    config = read_dflash_gguf_config(gguf_path)
 
-    reader = GGUFReader(gguf_path)
-    metadata = {}
-    for key, field in reader.fields.items():
-        if field.types and field.types[0] == GGUFValueType.ARRAY:
-            # Array field: data values are in parts[field.data]
-            metadata[key] = [field.parts[i].tolist()[0] for i in field.data]
-        else:
-            # Scalar field
-            data = field.parts[-1]
-            if hasattr(data, "tolist"):
-                val = data.tolist()
-                metadata[key] = val[0] if len(val) == 1 else val
-            else:
-                metadata[key] = data
-    del reader
-
-    config = DFlashConfig.from_gguf_metadata(metadata)
     print(
         f"DFlash config: {config.n_layers} layers, dim={config.dim}, "
         f"block_size={config.block_size}, target_layers={config.target_layers}"
@@ -121,12 +137,21 @@ def load_dflash_gguf(
     with torch.device("meta"):
         model = DFlashDraftModel(config, max_context_length=max_seq_len)
 
+    expected_shapes = {name: value.shape for name, value in model.named_parameters()}
+
+    def convert_weight(name, value):
+        if config.selector_top_k and value.shape != expected_shapes[name]:
+            raise ValueError(
+                f"DFlash2 tensor {name} has shape {value.shape}, expected {expected_shapes[name]}"
+            )
+        return to_default(name, value)
+
     print(f"Loading DFlash draft from {gguf_path}...")
     load_checkpoint(
         gguf_path,
         model,
         key_map=dflash_gguf_to_model_key,
-        convert=to_default,
+        convert=convert_weight,
         dtype=activation_dtype,
     )
     _validate_no_meta(model)
@@ -136,39 +161,30 @@ def load_dflash_gguf(
     return model, config
 
 
-def load_dflash_mlx(
-    mlx_dir: str,
-    backend: str = "mlx",
-    max_seq_len: int = 131072,
-    activation_dtype: torch.dtype = torch.bfloat16,
-) -> tuple:
-    """Load an MLX affine-quantized DFlash draft (e.g. dflash-3l_wind2048-mlx-q5).
-
-    The MLX draft's tensor names already match the ``DFlashDraftModel`` FQNs
-    (``fc``, ``hidden_norm``, ``norm``, per-layer ``self_attn`` / ``mlp`` /
-    layernorms / ``q_norm`` / ``k_norm``), so no key remap is needed:
-    ``iter_checkpoint`` auto-detects the MLX layout, ``_iter_mlx`` rebuilds each
-    ``(weight, scales, biases)`` triplet as a torchao intx tensor, and the draft
-    is already quantized. ``DFlashConfig`` is built
-    from the checkpoint's HF-style ``config.json``. Returns ``(model, config)``.
-    """
+def read_dflash_mlx_config(mlx_dir: str, max_seq_len: int = 131072) -> DFlashConfig:
+    """Read and validate an MLX draft config without loading weights."""
     import json
     import os
 
-    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
-        _iter_mlx,
-    )
-    from executorch.examples.models.muse_glimmer.model.dflash_model import (
-        DFlashConfig,
-        DFlashDraftModel,
-    )
-    from executorch.extension.llm.export.load import load_checkpoint
-    from executorch.extension.llm.export.quant import to_default
+    from executorch.examples.models.muse_glimmer.model.dflash_model import DFlashConfig
 
     with open(os.path.join(mlx_dir, "config.json"), "r") as f:
         c = json.load(f)
+    if "DFlash2DraftModel" in (c.get("architectures") or []) or any(
+        metadata.get(key)
+        for metadata in (c, c.get("dflash_config") or {})
+        for key in (
+            "conv_kernel_size",
+            "conv_group_size",
+            "selector_rank",
+            "selector_top_k",
+        )
+    ):
+        raise ValueError(
+            "DFlash2 requires --draft-gguf; --draft-mlx supports original DFlash"
+        )
     layer_types = c.get("layer_types", [])
-    config = DFlashConfig(
+    return DFlashConfig(
         dim=c["hidden_size"],
         n_layers=c["num_hidden_layers"],
         n_heads=c["num_attention_heads"],
@@ -187,6 +203,34 @@ def load_dflash_mlx(
             [lt == "sliding_attention" for lt in layer_types] if layer_types else None
         ),
     )
+
+
+def load_dflash_mlx(
+    mlx_dir: str,
+    backend: str = "mlx",
+    max_seq_len: int = 131072,
+    activation_dtype: torch.dtype = torch.bfloat16,
+) -> tuple:
+    """Load an MLX affine-quantized DFlash draft (e.g. dflash-3l_wind2048-mlx-q5).
+
+    The MLX draft's tensor names already match the ``DFlashDraftModel`` FQNs
+    (``fc``, ``hidden_norm``, ``norm``, per-layer ``self_attn`` / ``mlp`` /
+    layernorms / ``q_norm`` / ``k_norm``), so no key remap is needed:
+    ``iter_checkpoint`` auto-detects the MLX layout, ``_iter_mlx`` rebuilds each
+    ``(weight, scales, biases)`` triplet as a torchao intx tensor, and the draft
+    is already quantized. ``DFlashConfig`` is built
+    from the checkpoint's HF-style ``config.json``. Returns ``(model, config)``.
+    """
+    from executorch.examples.models.muse_glimmer.loaders.checkpoint_loader import (
+        _iter_mlx,
+    )
+    from executorch.examples.models.muse_glimmer.model.dflash_model import (
+        DFlashDraftModel,
+    )
+    from executorch.extension.llm.export.load import load_checkpoint
+    from executorch.extension.llm.export.quant import to_default
+
+    config = read_dflash_mlx_config(mlx_dir, max_seq_len)
 
     print("Building DFlash draft model on meta device...")
     with torch.device("meta"):

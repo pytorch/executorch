@@ -1,5 +1,5 @@
 load("@fbcode_macros//build_defs:build_file_migration.bzl", "fbcode_target")
-load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "CPU_COMPAT")
+load("@fbsource//xplat/executorch/backends/native/runtime/engine:targets.bzl", "TORCH_COMPAT")
 load("@fbsource//xplat/executorch/build:runtime_wrapper.bzl", "runtime")
 
 oncall("executorch")
@@ -18,10 +18,12 @@ fbcode_target(
     deps = [
         "//caffe2:torch",
         "//executorch/backends/native/examples/hf_llm:export_hf_llm_lib",
+        "//executorch/exir/_serialize:ptn",
         "//executorch/exir/native:native",
         "//executorch/extension/llm/export:gguf",
         "//pytorch/vision:torchvision",
+        "fbsource//third-party/pypi/gguf:gguf",
         "fbsource//third-party/pypi/transformers:transformers",
     ],
-    **CPU_COMPAT
+    **TORCH_COMPAT
 )

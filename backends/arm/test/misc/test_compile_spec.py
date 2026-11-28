@@ -34,6 +34,71 @@ from executorch.exir.backend.partitioner import PartitionResult
 from pytest import mark, raises, warns
 
 
+def test_vgf_selective_aliasing_preserves_other_mutable_state(monkeypatch):
+    class MixedState(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("cache", torch.zeros(4, dtype=torch.int8))
+            self.register_buffer("recurrent", torch.zeros(4))
+
+        def forward(self, x, y):
+            self.cache.add_(x)
+            self.recurrent.add_(y)
+            return self.cache.to(torch.float32) + self.recurrent
+
+    partitioner = VgfPartitioner(
+        VgfCompileSpec(alias_buffer_mutations=True), mutable_buffer_names={"cache"}
+    )
+
+    def tag_every_op(_self, program):
+        for node in program.graph.nodes:
+            if node.op == "call_function":
+                node.meta["delegation_tag"] = "tag0"
+        return PartitionResult(program, {"tag0": partitioner.delegation_spec})
+
+    monkeypatch.setattr(TOSAPartitioner, "partition", tag_every_op)
+    monkeypatch.setattr(
+        TOSABackend,
+        "_preprocess",
+        staticmethod(lambda *args: PreprocessResult(processed_bytes=b"tosa")),
+    )
+    monkeypatch.setattr(
+        VgfBackend, "_compile_tosa_flatbuffer", staticmethod(lambda *args: b"vgf")
+    )
+    monkeypatch.setattr(vgf_backend, "arm_get_first_delegation_tag", lambda _: "tag0")
+    program = torch.export.export(
+        MixedState(), (torch.ones(4, dtype=torch.int8), torch.ones(4))
+    ).run_decompositions()
+    lowered = to_backend(program, partitioner)
+    assert set(lowered.graph_signature.buffers_to_mutate.values()) == {"recurrent"}
+    delegates = [
+        m for m in lowered.graph_module.modules() if hasattr(m, "compile_specs")
+    ]
+    assert len(delegates) == 1
+    specs = {s.key: s.value for s in delegates[0].compile_specs}
+    assert specs["mutable_buffer_pairs"]
+    assert not any(key.startswith("vgf_shared_") for key in specs)
+
+
+@mark.parametrize("dtype", [torch.int16, torch.float16, torch.int32])
+def test_vgf_mutable_aliasing_rejects_unsupported_dtype(dtype):
+    class State(torch.nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.register_buffer("state", torch.zeros(4, dtype=dtype))
+
+        def forward(self, value):
+            self.state.add_(value)
+            return self.state * 2
+
+    program = torch.export.export(
+        State(), (torch.ones(4, dtype=dtype),)
+    ).run_decompositions()
+    partitioner = VgfPartitioner(VgfCompileSpec(alias_buffer_mutations=True))
+    with raises(ValueError, match="must use torch.int8 or torch.float32"):
+        partitioner._validate_mutable_buffers(program)
+
+
 def test_compile_spec_u55_INT():
     compile_spec = (
         EthosUCompileSpec(

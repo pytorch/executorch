@@ -111,6 +111,14 @@ bool is_metadata_int(const Json& value) {
 
 } // namespace
 
+void check_little_endian_host(std::endian host) {
+  if (host != std::endian::little) {
+    throw std::runtime_error(
+        "package: PTN data is little-endian; big-endian hosts are not "
+        "supported yet");
+  }
+}
+
 bool Package::looks_like_package(ByteSpan bytes) {
   // Every zip record signature begins "PK"; a bare .ptg starts with a
   // flatbuffer root offset followed by "NPTG" at offset 4, so this cannot
@@ -122,6 +130,7 @@ Package::Package()
     : id_(next_package_id.fetch_add(1, std::memory_order_relaxed)) {}
 
 Package Package::load(OwnedBytes bytes) {
+  check_little_endian_host();
   Package out;
   out.archive_bytes_ = std::make_shared<const OwnedBytes>(std::move(bytes));
   if (out.archive_bytes_->span().size() > detail::kMaxPackageBytes) {
@@ -133,6 +142,7 @@ Package Package::load(OwnedBytes bytes) {
 }
 
 Package Package::load(const std::string& path) {
+  check_little_endian_host();
   std::optional<OwnedBytes> mapped;
   try {
     mapped = OwnedBytes::from_file(path, true, detail::kMaxPackageBytes);

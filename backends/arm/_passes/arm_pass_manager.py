@@ -142,7 +142,7 @@ from executorch.backends.arm._passes import (  # type: ignore[attr-defined]
     InsertConstShapesPass,
     InsertControlFlowRescalesPass,
     InsertDataLayoutCastsPass,
-    InsertDynamicPaddingPass,
+    InsertExplicitPaddingPass,
     InsertInt32CastsAfterInt64PlaceholdersPass,
     InsertRescaleInt32Pass,
     InsertRescalePass,
@@ -307,7 +307,10 @@ def clear_registered_pass_insertions() -> None:
 
 
 class ArmPassManager(ExportedProgramPassManager):
-    def __init__(self, compile_spec: ArmCompileSpec) -> None:
+    def __init__(
+        self,
+        compile_spec: ArmCompileSpec,
+    ) -> None:
         self.compile_spec = compile_spec
         self.tosa_spec = compile_spec.tosa_spec
         self._skip_pass_types: tuple[type, ...] = ()
@@ -786,7 +789,11 @@ class ArmPassManager(ExportedProgramPassManager):
                 FuseEqualPlaceholdersPass(exported_program),
                 NormalizeTransformInputPlaceholdersPass(exported_program),
                 ExirToTosaPass(exported_program),
-                InsertDynamicPaddingPass(),
+                InsertExplicitPaddingPass(
+                    large_stride_pool_padding=(
+                        self.compile_spec._get_pass_pipeline_config().large_stride_pool_padding
+                    )
+                ),
                 ResolveViewCopyInferredDimPass(),
                 SymbolicToTosaShapesPass(),
                 FuseConsecutiveConcatShapesPass(),

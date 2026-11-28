@@ -2112,10 +2112,10 @@ bool VgfRepr::process_vgf(
       const auto format =
           vgflib::ToVkFormat(resource_decoder->getVkFormat(mrt));
       if (!is_tensor_like_descriptor_type(descriptor_type) ||
-          format != VK_FORMAT_R8_SINT) {
+          (format != VK_FORMAT_R8_SINT && format != VK_FORMAT_R32_SFLOAT)) {
         ET_LOG(
             Error,
-            "Mutable buffer %u must use a signed INT8 tensor-like resource",
+            "Mutable buffer %u must use an INT8 or FP32 tensor-like resource",
             id);
         return false;
       }

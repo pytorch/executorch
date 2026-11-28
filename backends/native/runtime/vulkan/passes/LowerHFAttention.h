@@ -57,7 +57,11 @@ void check_cache_positions(
 // positive literal SDPA scale is passed through to llama.custom_sdpa (Whisper
 // pre-scales q and passes scale=1). cache_position must be a graph input, and
 // causal_mask HF's static-cache causal mask over it, broadcast through any
-// clones, aliases, expands and unsqueezes.
+// clones, aliases, expands and unsqueezes. The mask's query positions and the
+// RoPE position_ids are cache_position itself or, as transformers 5 builds
+// them, arange(T) + cache_position[0:1] with T the query's token count: the
+// SymInt that sizes the token axis of the view producing q, k or v, or a
+// literal equal to static lengths.
 // The kernels read positions from cache_position[0] on, so it must hold
 // contiguous positions; the pass marks it with kCachePositionAttr for the
 // engine to check on the host. Since that check also keeps the kernels from

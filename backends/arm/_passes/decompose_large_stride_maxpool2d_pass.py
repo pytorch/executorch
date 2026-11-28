@@ -11,6 +11,9 @@ from typing import Set, Type
 import torch
 from executorch.backends.arm._passes import ArmOpTargetedPass
 from executorch.backends.arm._passes.size_adjust_input_pass import SizeAdjustInputPass
+from executorch.backends.arm.operators.operator_validation_utils import (
+    adjust_pooling_pad_if_needed,
+)
 from executorch.backends.arm.tosa.specification import get_context_spec
 from executorch.exir.dialects._ops import ops as exir_ops
 from executorch.exir.pass_base import ExportPass
@@ -76,13 +79,20 @@ def can_decompose_large_stride_maxpool2d(
         or not _u55_kernel_check((kernel_h, kernel_w))
         or not _u55_kernel_check((1, kernel_w))
         or not _u55_kernel_check((1, kernel_h))
-        or height < kernel_h
-        or width < kernel_w
     ):
         return False
 
-    output_h = height // kernel_h
-    output_w = width // kernel_w
+    post_h = adjust_pooling_pad_if_needed(
+        height, kernel_h, stride_h, padding_h, ceil_mode
+    )
+    post_w = adjust_pooling_pad_if_needed(
+        width, kernel_w, stride_w, padding_w, ceil_mode
+    )
+    padded_h = height + padding_h + post_h
+    padded_w = width + padding_w + post_w
+    output_h = padded_h // kernel_h
+    output_w = padded_w // kernel_w
+    padded_shape = (*input_shape[:-2], padded_h, padded_w)
     first_reduction_shape = (
         *input_shape[:-2],
         output_h * output_w * kernel_h,
@@ -94,10 +104,9 @@ def can_decompose_large_stride_maxpool2d(
     return (
         max(stride_h, stride_w) > _U55_MAX_POOL_STRIDE
         and (kernel_h, kernel_w) == (stride_h, stride_w)
-        and (padding_h, padding_w) == (0, 0)
         and (dilation_h, dilation_w) == (1, 1)
-        and not ceil_mode
         and _u55_dim_check(input_shape)
+        and _u55_dim_check(padded_shape)
         and _u55_dim_check(first_reduction_shape)
         and _u55_dim_check(second_reduction_shape)
         and _u55_dim_check(output_shape)
@@ -106,6 +115,14 @@ def can_decompose_large_stride_maxpool2d(
 
 class DecomposeLargeStrideMaxPool2dForU55Pass(ArmOpTargetedPass):
     """Legalize non-overlapping max_pool2d with strides unsupported by U55.
+
+    Materialize padding, including partial ceil-mode windows, before reducing
+    each window with supported stride-one pools.
+
+    Operator support uses the same eligibility check to keep these pools in the
+    NPU partition. This pass rewrites them into supported NPU operations; it
+    does not introduce CPU fallback. Pools that fail the check continue through
+    the normal operator-support rules.
 
     Non-U55 profiles, including U85, use the normal TOSA/Vela path and do not
     need this U55 pooling-engine workaround.
@@ -138,15 +155,36 @@ class DecomposeLargeStrideMaxPool2dForU55Pass(ArmOpTargetedPass):
 
         kernel_h, kernel_w = _pair(kernel)
         n, c, height, width = x.data.shape
-        output_h = height // kernel_h
-        output_w = width // kernel_w
-        cropped_h = output_h * kernel_h
-        cropped_w = output_w * kernel_w
 
         no_qparams_meta = meta.copy()
         no_qparams_meta.data = meta.data.copy()
         no_qparams_meta.data.pop("input_qparams", None)
         no_qparams_meta.data.pop("output_qparams", None)
+
+        pad_h, pad_w = _pair(padding, (0, 0))
+        if pad_h or pad_w or ceil_mode:
+            post_h = adjust_pooling_pad_if_needed(
+                height, kernel_h, kernel_h, pad_h, ceil_mode
+            )
+            post_w = adjust_pooling_pad_if_needed(
+                width, kernel_w, kernel_w, pad_w, ceil_mode
+            )
+            pad_meta = meta.copy()
+            pad_meta.data = meta.data.copy()
+            pad_meta.data.pop("output_qparams", None)
+            # RewritePadPass quantizes -inf to the input's minimum code.
+            x = super().call_operator(
+                exir_ops.edge.aten.constant_pad_nd.default,
+                (x, [pad_w, post_w, pad_h, post_h], float("-inf")),
+                {},
+                pad_meta,
+            )
+            n, c, height, width = x.data.shape
+
+        output_h = height // kernel_h
+        output_w = width // kernel_w
+        cropped_h = output_h * kernel_h
+        cropped_w = output_w * kernel_w
 
         if cropped_h != height:
             x = super().call_operator(

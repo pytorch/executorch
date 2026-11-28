@@ -179,6 +179,12 @@ OP_CASES = {
         (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
         None,
     ),
+    "swapaxes": OpCase(
+        torch.ops.aten.swapaxes.default,
+        _build_module(lambda x, y: torch.ops.aten.swapaxes.default(x, 2, 3)),
+        (torch.randn(2, 3, 4, 5), torch.randn(2, 3, 4, 5)),
+        None,
+    ),
     "transpose_copy": OpCase(
         torch.ops.aten.transpose_copy.int,
         _build_module(lambda x, y: torch.ops.aten.transpose_copy.int(x, 2, 3)),

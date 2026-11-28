@@ -46,7 +46,6 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
 
  private:
   struct DFlash;
-  using Probabilities = std::vector<std::vector<float>>;
   struct SessionState {
     int32_t seq_id;
     std::optional<batching::SamplingParams> sampling;
@@ -75,17 +74,19 @@ class MuseGlimmerMLXExecutor final : public batching::Executor {
       const std::vector<batching::Token>& anchors,
       int context_limit,
       batching::BatchInput* verification);
-  bool speculate(const batching::BatchInput& batch, batching::BatchOutput& out);
+  bool speculate(
+      const batching::BatchInput& batch,
+      batching::BatchOutput& out,
+      bool input_anchors = false);
   bool execute_impl(
       const batching::BatchInput& batch,
       batching::BatchOutput& out,
-      Probabilities* probabilities);
+      bool verification);
   std::optional<batching::Token> sample_row(
       aten::Tensor& logits,
       int row,
       batching::SessionId session,
       batching::Position prediction_position,
-      std::vector<float>* probabilities = nullptr,
       bool draft = false);
 
   // Reverse destruction: vision before its module/mutex, then the module before

@@ -89,6 +89,7 @@ from executorch.exir.tensor import (
     make_allocation_info,
     make_tensor_value,
     memory_format_enum,
+    placeholder_constant,
     scalar_type_enum,
     TensorSpec,
 )
@@ -98,20 +99,6 @@ from torch.export.exported_program import ExportedProgram, ExportGraphSignature
 from torch.fx.node import Node
 from torch.utils import _pytree as pytree
 from typing_extensions import TypeAlias
-
-
-def _normalize_constant_tensor(tensor: torch.Tensor) -> torch.Tensor:
-    # For tensors that are neither contiguous nor channels-last, convert to contiguous format.
-    if not (
-        tensor.is_contiguous()
-        or tensor.is_contiguous(memory_format=torch.channels_last)
-    ):
-        tensor = tensor.contiguous()
-
-    # Weights cannot be views during emission or serialization
-    if tensor.nbytes != tensor.untyped_storage().nbytes():
-        tensor = tensor.clone()
-    return tensor
 
 
 @dataclass
@@ -2190,7 +2177,7 @@ class _TopLevelEmitter(_Emitter):
 
             # assign the storage of the placeholder spec to the storage of the real tensor if there is one
             if real_tensor is not None:
-                real_tensor = _normalize_constant_tensor(real_tensor)
+                real_tensor = placeholder_constant(real_tensor)
                 spec.storage = real_tensor.untyped_storage()
                 spec.stride = real_tensor.stride()
                 spec.dim_order = dim_order_from_stride(spec.stride, tuple(spec.shape))

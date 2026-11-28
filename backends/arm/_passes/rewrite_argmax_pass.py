@@ -14,7 +14,7 @@ from torch.fx import GraphModule
 
 
 class RewriteArgmaxPass(ArmPass):
-    """Lower ARGMAX and its INT32 narrowing users to one TOSA ARGMAX."""
+    """Lower argmax/argmin and their INT32 narrowing users to TOSA."""
 
     _passes_required_after: Set[Type[ExportPass]] = set()
 
@@ -22,7 +22,10 @@ class RewriteArgmaxPass(ArmPass):
         graph = graph_module.graph
         modified = False
         for node in list(graph.nodes):
-            if node.target != exir_ops.edge.aten.argmax.default:
+            if node.target not in (
+                exir_ops.edge.aten.argmax.default,
+                exir_ops.edge.aten.argmin.default,
+            ):
                 continue
             casts = list(node.users)
             if not casts or not all(
@@ -44,6 +47,15 @@ class RewriteArgmaxPass(ArmPass):
             if dim < 0:
                 dim += len(input_node.meta["val"].shape)
             with graph.inserting_before(node):
+                if node.target == exir_ops.edge.aten.argmin.default:
+                    # Negation reverses floating-point ordering without
+                    # changing ties. Integer negation can overflow.
+                    input_node = create_node(
+                        graph,
+                        exir_ops.backend.tosa.NEGATE.default,
+                        (input_node, 0, 0),
+                        from_node=input_node,
+                    )
                 replacement = create_node(
                     graph,
                     exir_ops.backend.tosa.ARGMAX.default,

@@ -1,7 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
- * Copyright 2023-2025 Arm Limited and/or its affiliates.
+ * Copyright 2023-2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -19,8 +19,10 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 
 #include <executorch/runtime/core/error.h>
+#include <executorch/runtime/core/freeable_buffer.h>
 
 namespace executorch {
 namespace runtime {
@@ -60,7 +62,7 @@ typedef struct {
 } VelaIOs;
 
 // Processed data used by the backend to invoke the payload
-typedef struct {
+struct VelaHandles {
   const char* cmd_data;
   size_t cmd_data_size;
   const char* weight_data;
@@ -77,7 +79,14 @@ typedef struct {
   size_t persistent_init_size;
   VelaIOs* inputs;
   VelaIOs* outputs;
-} VelaHandles;
+
+  // Keep external payload pointers valid for the lifetime of these handles.
+  std::optional<runtime::FreeableBuffer> cmd_data_owner;
+  std::optional<runtime::FreeableBuffer> weight_data_owner;
+  std::optional<runtime::FreeableBuffer> inputs_owner;
+  std::optional<runtime::FreeableBuffer> outputs_owner;
+  std::optional<runtime::FreeableBuffer> persistent_init_data_owner;
+};
 
 /* Takes in the preprocessed vela_bin_stream wire format and returns data
  * needed to launch the workload on the Ethos-U and wire up input and

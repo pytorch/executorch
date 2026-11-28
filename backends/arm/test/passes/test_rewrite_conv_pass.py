@@ -3,10 +3,9 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-import itertools
 import operator
 import os
-from typing import Any, cast
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -21,6 +20,7 @@ from executorch.backends.arm._passes import (
     QuantizeClampArgumentsPass,
 )
 from executorch.backends.arm._passes.rewrite_conv_pass import RewriteConvPass
+from executorch.backends.arm._passes.tosa_lowering_utils import create_rescale_node
 from executorch.backends.arm.quantizer.arm_quantizer import (
     get_symmetric_a16w8_quantization_config,
     get_symmetric_quantization_config,
@@ -227,59 +227,11 @@ def _run_pre_rewrite_passes(exported_program: torch.export.ExportedProgram):
     return gm
 
 
-def _get_expected_int32_scales(
-    gm: torch.fx.GraphModule, rewrite_pass: RewriteConvPass
-) -> list[list[float]]:
-    """Calculate expected scales for direct INT32 convolution consumers.
-
-    Args:
-        gm (torch.fx.GraphModule): Graph containing rescaled convolutions.
-        rewrite_pass (RewriteConvPass): Pass used to identify INT32 consumers.
-
-    Returns:
-        list[list[float]]: Expected per-consumer rescale values.
-
-    """
-    expected_int32_scales = []
-    for node in gm.graph.nodes:
-        if node.target != exir_ops.edge.aten.convolution.default:
-            continue
-        for int32_user in rewrite_pass._get_direct_int32_rescale_users(node):
-            input_qparams = node.meta["input_qparams"]
-            output_qparams = node.meta["output_qparams"][0]
-            activation_qparams = input_qparams[0]
-            weight_qparams = input_qparams[1]
-            weight_scales = (
-                weight_qparams.get_scale_per_channel()
-                if weight_qparams.per_channel
-                else [weight_qparams.get_scale_per_tensor()]
-            )
-            activation_scale = activation_qparams.get_scale_per_tensor()
-            output_scale = output_qparams.get_scale_per_tensor()
-            assert output_qparams.get_zp_per_tensor() == int32_user.args[3]
-            user_scales = cast(list[float], int32_user.args[2])
-            assert len(user_scales) in (1, len(weight_scales))
-            # Derive this independently from the rewrite helper:
-            #
-            #   accumulator -> declared output -> INT32 consumer
-            #   (input * weight / output) * consumer
-            expected_int32_scales.append(
-                [
-                    activation_scale * weight_scale / output_scale * user_scale
-                    for weight_scale, user_scale in zip(
-                        weight_scales,
-                        itertools.cycle(user_scales),
-                    )
-                ]
-            )
-    return expected_int32_scales
-
-
 def _rewrite_a16w8_convs(
     model: nn.Module,
     inputs: tuple[torch.Tensor, ...],
     tosa_spec: TosaSpecification | None = None,
-) -> tuple[torch.fx.GraphModule, list[list[float]]]:
+) -> torch.fx.GraphModule:
     """Run the passes needed to inspect rewritten A16W8 convolutions."""
     exported_program = _export_quantized_a16w8(model, inputs)
     edge_program = to_edge(
@@ -290,12 +242,9 @@ def _rewrite_a16w8_convs(
     with TosaLoweringContext(tosa_spec or _compile_spec_int16().tosa_spec):
         rescale_result = InsertRescaleInt32Pass()(gm)
         assert rescale_result is not None
-        expected_int32_scales = _get_expected_int32_scales(
-            rescale_result.graph_module, rewrite_pass
-        )
         rewrite_result = rewrite_pass(rescale_result.graph_module)
         assert rewrite_result is not None
-    return rewrite_result.graph_module, expected_int32_scales
+    return rewrite_result.graph_module
 
 
 def _get_call_function_node(gm: torch.fx.GraphModule, target):
@@ -308,18 +257,15 @@ def _get_call_function_node(gm: torch.fx.GraphModule, target):
 def _add_a16w8_rescale_head(
     graph: torch.fx.Graph,
     accumulator: torch.fx.Node,
-    positional_unsigned: tuple[bool, ...] = (),
+    unsigned_flags: tuple[bool, bool] = (False, False),
 ) -> tuple[torch.fx.Node, torch.fx.Node]:
-    rescale = graph.call_function(
-        exir_ops.backend.tosa.RESCALE.default,
-        args=(
-            accumulator,
-            torch.int16,
-            [1.0],
-            0,
-            0,
-            *positional_unsigned,
-        ),
+    rescale = create_rescale_node(
+        graph,
+        args=(accumulator, torch.int16, [1.0], 0, 0),
+        kwargs={
+            "input_unsigned": unsigned_flags[0],
+            "output_unsigned": unsigned_flags[1],
+        },
     )
     layout_permute = graph.call_function(
         exir_ops.edge.aten.permute_copy.default,
@@ -500,18 +446,7 @@ def test_rewrite_conv_a16w8_mixed_consumers_restore_int16(
     inputs: tuple[torch.Tensor, ...],
     tosa_target: Any,
 ) -> None:
-    r"""Test that mixed consumers branch at the INT48 accumulator.
-
-                              +-> combined RESCALE (INT32) -> PERMUTE
-                              |                              -> residual ADD
-        A16W8 CONV ----------+
-        accumulator (INT48)  +-> RESCALE (INT16) -> PERMUTE
-                                                             -> following op
-
-    The INT32 branch must consume the convolution output directly. Routing it
-    through the INT16 rescale first would irreversibly lose accumulator range.
-    The parameterized following operation still receives INT16. This applies
-    to all convolution variants supported by the rewrite pass.
+    """All consumers must retain the declared INT16 quantization boundary.
 
     Args:
         model (nn.Module): Model containing the convolution under test.
@@ -520,39 +455,40 @@ def test_rewrite_conv_a16w8_mixed_consumers_restore_int16(
 
     """
     _lower_a16w8_to_tosa(model, inputs)
-    gm, expected_int32_scales = _rewrite_a16w8_convs(model, inputs)
-
-    mixed_output_convs = [
-        node
-        for node in gm.graph.nodes
-        if node.target == tosa_target
-        and len(node.users) == 2
-        and {
-            user.args[1]
-            for user in node.users
-            if user.target == exir_ops.backend.tosa.RESCALE.default
-        }
-        == {torch.int16, torch.int32}
-    ]
-    assert len(mixed_output_convs) == 1
-    int32_rescale = next(
-        user for user in mixed_output_convs[0].users if user.args[1] == torch.int32
-    )
-    assert any(
-        int32_rescale.args[2] == pytest.approx(expected)
-        for expected in expected_int32_scales
-    )
+    gm = _rewrite_a16w8_convs(model, inputs)
+    convs = [node for node in gm.graph.nodes if node.target == tosa_target]
+    assert convs
+    for conv in convs:
+        (rescale,) = tuple(conv.users)
+        assert rescale.target == exir_ops.backend.tosa.RESCALE.default
+        assert rescale.kwargs["dtype"] == torch.int16
+        assert rescale.kwargs["scale32"] is False
+        assert all(0 <= value < 32768 for value in rescale.args[1])
+        assert conv.meta[TosaSpecialDtype.meta_key()] == TosaSpecialDtype.INT48
 
 
-def test_rewrite_conv_rescale_signature_includes_positional_unsigned_flags() -> None:
+def test_rewrite_conv_rescale_signature_includes_unsigned_flags() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
-    signed_rescale, _ = _add_a16w8_rescale_head(graph, accumulator, (False, False))
-    unsigned_rescale, _ = _add_a16w8_rescale_head(graph, accumulator, (False, True))
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int16)
+    signed_rescale, signed_permute = _add_a16w8_rescale_head(
+        graph, accumulator, (False, False)
+    )
+    unsigned_rescale, unsigned_permute = _add_a16w8_rescale_head(
+        graph, accumulator, (False, True)
+    )
 
     assert build_node_signature(
-        signed_rescale, positional_arg_start=1
-    ) != build_node_signature(unsigned_rescale, positional_arg_start=1)
+        signed_rescale, positional_arg_start=5
+    ) != build_node_signature(unsigned_rescale, positional_arg_start=5)
+    graph.output((signed_permute, unsigned_permute))
+    graph_module = torch.fx.GraphModule({}, graph)
+    node_order = {node: index for index, node in enumerate(graph.nodes)}
+    result = RewriteConvPass._deduplicate_a16w8_output_rescales(
+        graph_module, accumulator, node_order
+    )
+    assert result == [signed_rescale, unsigned_rescale]
+    graph.lint()
 
 
 def test_rewrite_conv_without_convolution_does_not_require_context() -> None:
@@ -568,6 +504,7 @@ def test_rewrite_conv_without_convolution_does_not_require_context() -> None:
 def test_rewrite_conv_a16w8_unknown_accumulator_user_is_unchanged() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     _, first_permute = _add_a16w8_rescale_head(graph, accumulator)
     _, second_permute = _add_a16w8_rescale_head(graph, accumulator)
     unexpected_user = graph.call_function(torch.neg, args=(accumulator,))
@@ -590,6 +527,7 @@ def test_rewrite_conv_a16w8_unknown_accumulator_user_is_unchanged() -> None:
 def test_rewrite_conv_a16w8_multi_consumer_rescale_is_not_deduplicated() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     first_rescale, first_permute = _add_a16w8_rescale_head(graph, accumulator)
     second_rescale, second_permute = _add_a16w8_rescale_head(graph, accumulator)
     output = graph.output((first_permute, second_permute, second_rescale))
@@ -608,7 +546,9 @@ def test_rewrite_conv_a16w8_multi_consumer_rescale_is_not_deduplicated() -> None
 def test_rewrite_conv_a16w8_deduplication_uses_graph_order() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     temporary_input = graph.placeholder("temporary_input")
+    temporary_input.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     early_rescale, early_permute = _add_a16w8_rescale_head(graph, temporary_input)
     late_rescale, late_permute = _add_a16w8_rescale_head(graph, accumulator)
     early_rescale.replace_input_with(temporary_input, accumulator)
@@ -632,6 +572,7 @@ def test_rewrite_conv_a16w8_deduplication_uses_graph_order() -> None:
 def test_rewrite_conv_a16w8_unknown_order_user_is_unchanged() -> None:
     graph = torch.fx.Graph()
     accumulator = graph.placeholder("accumulator")
+    accumulator.meta["val"] = torch.empty((1, 2, 3, 4), dtype=torch.int32)
     _, first_permute = _add_a16w8_rescale_head(graph, accumulator)
     node_order = {node: index for index, node in enumerate(graph.nodes)}
     _, second_permute = _add_a16w8_rescale_head(graph, accumulator)
@@ -650,11 +591,12 @@ def test_rewrite_conv_a16w8_unknown_order_user_is_unchanged() -> None:
     graph.lint()
 
 
-def test_rewrite_conv_a16w8_u55_separates_distinct_output_rescales() -> None:
+def test_rewrite_conv_a16w8_u55_preserves_shared_int16_boundary() -> None:
+    """U55 consumers share the declared narrow convolution output."""
     model = A16W8MixedConsumerChain(nn.Conv2d(4, 4, 1))
     inputs = (torch.randn(1, 4, 8, 8),)
-    generic_graph, _ = _rewrite_a16w8_convs(model, inputs)
-    u55_graph, _ = _rewrite_a16w8_convs(
+    generic_graph = _rewrite_a16w8_convs(model, inputs)
+    u55_graph = _rewrite_a16w8_convs(
         model,
         inputs,
         TosaSpecification.create_from_string("TOSA-1.0+INT+int16+int4+u55"),
@@ -669,11 +611,14 @@ def test_rewrite_conv_a16w8_u55_separates_distinct_output_rescales() -> None:
     ]
     u55_convs = [node for node in u55_graph.graph.nodes if node.target in conv_targets]
 
-    assert len(u55_convs) == len(generic_convs) + 1
+    assert len(u55_convs) == len(generic_convs)
     assert all(len(conv.users) == 1 for conv in u55_convs)
     assert all(
         next(iter(conv.users)).target == exir_ops.backend.tosa.RESCALE.default
         for conv in u55_convs
+    )
+    assert all(
+        next(iter(conv.users)).kwargs["dtype"] == torch.int16 for conv in u55_convs
     )
 
 
@@ -690,37 +635,32 @@ def test_rewrite_conv_a16w8_mixed_consumers_lowers_on_u55() -> None:
     pipeline.run()
 
 
-def test_rewrite_conv_a16w8_preserves_int32_for_int32_consumers() -> None:
-    r"""Test that an exclusively INT32 consumer keeps the widened path.
-
-        x (INT16) -> RESCALE (INT32) -------------------------+
-                                                              |
-        x (INT16) -> CONV (INT48)                              ADD
-                          -> combined RESCALE (INT32)           |
-                          -> PERMUTE ---------------------------+
-
-    No INT16 rescale is needed because every convolution consumer accepts
-    INT32. Combining both rescale factors converts directly from INT48 to the
-    addition's INT32 domain without changing the represented values.
-
-    """
+def test_rewrite_conv_a16w8_preserves_int16_for_int32_consumers() -> None:
+    """Widening for ADD must happen after the declared convolution output."""
     inputs = (torch.randn(1, 4, 8, 8),)
-    gm, expected_int32_scales = _rewrite_a16w8_convs(A16W8Int32Consumer(), inputs)
+    gm = _rewrite_a16w8_convs(A16W8Int32Consumer(), inputs)
 
     direct_int32_rescales = [
         node
         for node in gm.graph.nodes
         if node.op == "call_function"
         and node.target == exir_ops.backend.tosa.RESCALE.default
-        and node.args[1] == torch.int32
+        and node.kwargs["dtype"] == torch.int32
         and node.all_input_nodes[0].target
         in {
             exir_ops.backend.tosa.CONV2D.default,
             exir_ops.backend.tosa.DEPTHWISE_CONV2D.default,
         }
     ]
-    assert len(direct_int32_rescales) == len(expected_int32_scales) == 1
-    assert direct_int32_rescales[0].args[2] == pytest.approx(expected_int32_scales[0])
+    assert direct_int32_rescales == []
+    conv = _get_call_function_node(gm, exir_ops.backend.tosa.CONV2D.default)
+    (rescale,) = tuple(conv.users)
+    assert rescale.target == exir_ops.backend.tosa.RESCALE.default
+    assert rescale.kwargs["dtype"] == torch.int16
+    (layout,) = tuple(rescale.users)
+    (add_input,) = tuple(layout.users)
+    assert add_input.target == exir_ops.backend.tosa.RESCALE.default
+    assert add_input.kwargs["dtype"] == torch.int32
 
 
 def test_rewrite_conv1d_a16w8_narrows_instead_of_forking_int32() -> None:
@@ -734,7 +674,7 @@ def test_rewrite_conv1d_a16w8_narrows_instead_of_forking_int32() -> None:
 
     """
     inputs = (torch.randn(1, 4, 8),)
-    gm, _ = _rewrite_a16w8_convs(A16W8Conv1dInt32Consumer(), inputs)
+    gm = _rewrite_a16w8_convs(A16W8Conv1dInt32Consumer(), inputs)
 
     conv = _get_call_function_node(gm, exir_ops.backend.tosa.CONV2D.default)
     forked_int32_rescales = [
@@ -742,7 +682,7 @@ def test_rewrite_conv1d_a16w8_narrows_instead_of_forking_int32() -> None:
         for node in gm.graph.nodes
         if node.op == "call_function"
         and node.target == exir_ops.backend.tosa.RESCALE.default
-        and node.args[1] == torch.int32
+        and node.kwargs["dtype"] == torch.int32
         and node.all_input_nodes[0] is conv
     ]
     assert forked_int32_rescales == []
@@ -766,7 +706,7 @@ def test_rewrite_conv1d_a16w8_shares_one_layout_boundary() -> None:
 
     """
     inputs = (torch.randn(1, 4, 8),)
-    gm, _ = _rewrite_a16w8_convs(A16W8Conv1dSharedConsumers(), inputs)
+    gm = _rewrite_a16w8_convs(A16W8Conv1dSharedConsumers(), inputs)
 
     conv = _get_call_function_node(gm, exir_ops.backend.tosa.CONV2D.default)
     boundary_rescales = [
@@ -786,29 +726,18 @@ def test_rewrite_conv1d_a16w8_shares_one_layout_boundary() -> None:
     assert len(output_permutes) == 1
 
 
-def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
-    r"""Test that an indirect INT32 consumer keeps a widened branch.
-
-        CONV (INT48) -+-> RESCALE (INT16) -> PERMUTE -> following CONV
-                      |
-                      +-> RESCALE (INT32) -> layout PERMUTE
-                          -> source PERMUTE -> RESCALE (INT32) -> ADD
-
-    The source permutation cannot operate on INT48. The first rescale widens
-    to the declared convolution domain in INT32, avoiding INT16 rounding while
-    leaving the following rescale on the correct side of the permutation.
-
-    """
+def test_rewrite_conv_a16w8_preserves_int16_before_permute() -> None:
+    """A source permutation must not bypass the narrow convolution output."""
     inputs = (torch.randn(1, 4, 8, 8),)
     model = A16W8PermutedInt32Consumer()
     _lower_a16w8_to_tosa(model, inputs)
-    gm, _ = _rewrite_a16w8_convs(model, inputs)
+    gm = _rewrite_a16w8_convs(model, inputs)
 
-    widened_paths: list[torch.fx.Node] = []
+    narrow_paths: list[torch.fx.Node] = []
     for node in gm.graph.nodes:
         if (
             node.target != exir_ops.backend.tosa.RESCALE.default
-            or node.args[1] != torch.int32
+            or node.kwargs["dtype"] != torch.int16
             or node.all_input_nodes[0].target != exir_ops.backend.tosa.CONV2D.default
         ):
             continue
@@ -818,14 +747,14 @@ def test_rewrite_conv_a16w8_preserves_int32_after_permute() -> None:
             for source_permute in layout_permute.users:
                 if source_permute.target != exir_ops.edge.aten.permute_copy.default:
                     continue
-                widened_paths.extend(
+                narrow_paths.extend(
                     consumer
                     for consumer in source_permute.users
                     if consumer.target == exir_ops.backend.tosa.RESCALE.default
-                    and consumer.args[1] == torch.int32
+                    and consumer.kwargs["dtype"] == torch.int32
                 )
 
-    assert len(widened_paths) == 1
+    assert len(narrow_paths) == 1
 
 
 @pytest.mark.parametrize(

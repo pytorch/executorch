@@ -19,7 +19,10 @@ fbcode_target(
 fbcode_target(
     _kind = runtime.python_library,
     name = "export_hf_llm_lib",
-    srcs = ["export_hf_llm.py"],
+    srcs = [
+        "export_hf_llm.py",
+        "muse_glimmer.py",
+    ],
     deps = [
         ":gguf_hf",
         ":hf_utils",
@@ -29,7 +32,10 @@ fbcode_target(
         "//executorch/exir/native:native",
         "//executorch/extension/llm/cache:cache",
         "//executorch/extension/llm/cache:hf_attention",
+        "//executorch/extension/llm/export:gguf",
         "//executorch/extension/llm/export:load",
+        "//executorch/extension/llm/export:model_metadata",
+        "//executorch/extension/llm/export:quant",
         "fbsource//third-party/pypi/accelerate:accelerate",
         "fbsource//third-party/pypi/safetensors:safetensors",
         "fbsource//third-party/pypi/transformers:transformers",
@@ -51,7 +57,10 @@ fbcode_target(
     deps = [
         ":export_hf_llm_lib",
         "//caffe2:torch",
-        "//executorch/export:export_utils",
+        "//executorch/backends/native:lib",
+        "//executorch/exir:lib",
+        "//executorch/extension/llm/export:gguf",
+        "//pytorch/ao:torchao",
         "fbsource//third-party/pypi/gguf:gguf",
         "fbsource//third-party/pypi/transformers:transformers",
     ],
@@ -93,5 +102,6 @@ fbcode_target(
         "//executorch/extension/llm/export:gguf",
         "//executorch/extension/llm/export:quant",
         "fbsource//third-party/pypi/gguf:gguf",
+        "fbsource//third-party/pypi/transformers:transformers",
     ],
 )

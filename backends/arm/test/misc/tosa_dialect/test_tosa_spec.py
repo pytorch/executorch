@@ -14,6 +14,14 @@ from executorch.backends.arm.tosa.specification import (
 
 from parameterized import parameterized  # type: ignore[import-untyped]
 
+_MX_FORMAT_EXTENSIONS = (
+    "mx_fp4e2m1fn",
+    "mx_fp6e2m3fn",
+    "mx_fp6e3m2fn",
+    "mx_fp8e4m3fn",
+    "mx_fp8e5m2",
+)
+
 test_valid_strings = [
     ("TOSA-1.0.0+INT+FP+fft", Tosa_1_00),
     ("TOSA-1.0.0+FP+bf16+fft", Tosa_1_00),
@@ -29,8 +37,16 @@ test_valid_strings = [
     ("TOSA-1.0+FP+INT+fft+int4+cf+8k", Tosa_1_00),
     ("TOSA-1.1.0+INT+shape+int64+u55", Tosa_1_1),
     ("TOSA-1.1.0+FP+shape+int64+random+blockscale_ue5m3+mxfp", Tosa_1_1),
+    (
+        "TOSA-1.1.0+FP+shape+int64+random+mx_common+mx_fp8e4m3fn+matmul_t",
+        Tosa_1_1,
+    ),
     ("TOSA-1.1+FP+INT+shape+int64+random", Tosa_1_1),
     ("TOSA-1.1+FP+INT+shape+int64+blockscale_ue5m3+mxfp+u55", Tosa_1_1),
+    (
+        "TOSA-1.1+FP+INT+shape+int64+mx_common+mx_fp8e4m3fn+matmul_t+u55",
+        Tosa_1_1,
+    ),
 ]
 
 test_valid_extensions = {
@@ -39,7 +55,7 @@ test_valid_extensions = {
         "FP": ["bf16", "fp8e4m3", "fp8e5m2", "fft", "var", "cf"],
     },
     "1.1": {
-        "INT": ["shape", "int64", "int16", "int4", "var", "cf", "u55"],
+        "INT": ["shape", "int64", "int16", "int4", "var", "cf", "u55", "matmul_t"],
         "FP": [
             "shape",
             "int64",
@@ -51,6 +67,9 @@ test_valid_extensions = {
             "cf",
             "random",
             "mxfp",
+            "mx_common",
+            *_MX_FORMAT_EXTENSIONS,
+            "matmul_t",
             "blockscale_ue5m3",
         ],
     },
@@ -103,9 +122,46 @@ class TestTosaSpecification(unittest.TestCase):
         assert isinstance(tosa_spec, expected_type)
         assert f"{tosa_spec}" == version_string
 
+    @parameterized.expand(_MX_FORMAT_EXTENSIONS)
+    def test_mx_format_extension(self, extension: str):
+        version_string = f"TOSA-1.1+FP+mx_common+{extension}"
+        spec = TosaSpecification.create_from_string(version_string)
+
+        assert spec.support_extension("mx_common")
+        assert spec.support_extension(extension)
+        assert not spec.support_extension("mxfp")
+        assert str(spec) == version_string
+
+    @parameterized.expand(_MX_FORMAT_EXTENSIONS)
+    def test_mx_format_requires_common(self, extension: str):
+        with self.assertRaisesRegex(ValueError, "require \\+mx_common"):
+            TosaSpecification.create_from_string(f"TOSA-1.1+FP+{extension}")
+
+    @parameterized.expand(["INT", "FP"])
+    def test_matmul_t_extension(self, profile: str):
+        version_string = f"TOSA-1.1+{profile}+matmul_t"
+        spec = TosaSpecification.create_from_string(version_string)
+
+        assert spec.support_extension("matmul_t")
+        assert not spec.support_extension("mx_common")
+        assert str(spec) == version_string
+
+    @parameterized.expand(["mx_common", "matmul_t", *_MX_FORMAT_EXTENSIONS])
+    def test_new_extensions_require_tosa_1_1(self, extension: str):
+        with self.assertRaises(ValueError):
+            TosaSpecification.create_from_string(f"TOSA-1.0+FP+{extension}")
+
+    def test_legacy_mxfp_extension(self):
+        spec = TosaSpecification.create_from_string("TOSA-1.1+FP+mxfp")
+
+        assert spec.support_extension("mxfp")
+        assert not spec.support_extension("mx_common")
+        assert not any(spec.support_extension(ext) for ext in _MX_FORMAT_EXTENSIONS)
+        assert str(spec) == "TOSA-1.1+FP+mxfp"
+
     def test_supports_new_1_1_extensions(self):
         fp_spec = TosaSpecification.create_from_string(
-            "TOSA-1.1+FP+shape+int64+random+mxfp+blockscale_ue5m3"
+            "TOSA-1.1+FP+shape+int64+random+mx_common+mx_fp8e4m3fn+matmul_t"
         )
         int_spec = TosaSpecification.create_from_string("TOSA-1.1+INT+shape+int64")
 
@@ -113,8 +169,9 @@ class TestTosaSpecification(unittest.TestCase):
         assert fp_spec.support_extension("shape")
         assert fp_spec.support_extension("int64")
         assert fp_spec.support_extension("random")
-        assert fp_spec.support_extension("mxfp")
-        assert fp_spec.support_extension("blockscale_ue5m3")
+        assert fp_spec.support_extension("mx_common")
+        assert fp_spec.support_extension("mx_fp8e4m3fn")
+        assert fp_spec.support_extension("matmul_t")
 
         assert isinstance(int_spec, Tosa_1_1)
         assert int_spec.support_extension("shape")

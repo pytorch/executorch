@@ -25,6 +25,16 @@ add_subdirectory(
   EXCLUDE_FROM_ALL
 )
 
+include("${EXECUTORCH_ROOT}/backends/arm/scripts/corstone_utils.cmake")
+set(ETHOS_SDK_PATH
+    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u"
+    CACHE PATH "Path to Ethos-U bare metal driver/env"
+)
+option(FETCH_ETHOS_U_CONTENT "Fetch Ethos-U dependencies" ON)
+arm_ensure_ethos_u_content(
+  "${ETHOS_SDK_PATH}" "${EXECUTORCH_ROOT}" ${FETCH_ETHOS_U_CONTENT} DRIVER_ONLY
+)
+
 find_package(GTest QUIET)
 if(NOT TARGET GTest::gtest_main)
   set(INSTALL_GTEST
@@ -38,9 +48,23 @@ if(NOT TARGET GTest::gtest_main)
 endif()
 
 add_executable(
+  ethosu_io_plan_test
+  test_ethosu_io.cpp "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUIOPlan.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
+)
+target_link_libraries(
+  ethosu_io_plan_test PRIVATE executorch_core GTest::gtest_main
+)
+add_test(NAME ethosu_io_plan_test COMMAND ethosu_io_plan_test)
+set_tests_properties(
+  ethosu_io_plan_test PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
+add_executable(
   ethosu_planned_scratch_test
   test_ethosu_planned_scratch.cpp
   "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUIOPlan.cpp"
   "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
   "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
 )
@@ -50,6 +74,22 @@ target_link_libraries(
 add_test(NAME ethosu_planned_scratch_test COMMAND ethosu_planned_scratch_test)
 set_tests_properties(
   ethosu_planned_scratch_test PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
+add_executable(
+  ethosu_scratch_io_test
+  test_ethosu_scratch_io.cpp
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUIOPlan.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
+)
+target_link_libraries(
+  ethosu_scratch_io_test PRIVATE executorch_core GTest::gtest_main
+)
+add_test(NAME ethosu_scratch_io_test COMMAND ethosu_scratch_io_test)
+set_tests_properties(
+  ethosu_scratch_io_test PROPERTIES LABELS "arm;ethos-u;runtime"
 )
 
 set(_ethos_u_runtime_tests_dir "${CMAKE_CURRENT_SOURCE_DIR}")
@@ -81,6 +121,22 @@ set_tests_properties(
   vela_external_blocks PROPERTIES LABELS "arm;ethos-u;runtime"
 )
 
+add_executable(
+  ethosu_backend_init_test
+  test_ethosu_backend_init.cpp
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUIOPlan.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
+  "${EXECUTORCH_ROOT}/backends/arm/runtime/VelaBinStream.cpp"
+)
+target_link_libraries(
+  ethosu_backend_init_test PRIVATE executorch_core GTest::gtest_main
+)
+add_test(NAME ethosu_backend_init_test COMMAND ethosu_backend_init_test)
+set_tests_properties(
+  ethosu_backend_init_test PROPERTIES LABELS "arm;ethos-u;runtime"
+)
+
 find_package(Threads REQUIRED)
 add_library(
   ethosu_execution_stats_test_library STATIC
@@ -89,9 +145,8 @@ add_library(
 )
 target_include_directories(
   ethosu_execution_stats_test_library
-  PRIVATE
-    "${EXECUTORCH_ROOT}/.."
-    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+  PRIVATE "${EXECUTORCH_ROOT}/.."
+          "${ETHOS_SDK_PATH}/core_software/core_driver/include"
 )
 target_compile_definitions(
   ethosu_execution_stats_test_library PRIVATE ET_EVENT_TRACER_ENABLED
@@ -107,9 +162,8 @@ add_library(
 )
 target_include_directories(
   ethosu_execution_stats_no_trace_test_library
-  PRIVATE
-    "${EXECUTORCH_ROOT}/.."
-    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+  PRIVATE "${EXECUTORCH_ROOT}/.."
+          "${ETHOS_SDK_PATH}/core_software/core_driver/include"
 )
 target_link_libraries(
   ethosu_execution_stats_no_trace_test_library PUBLIC executorch_core
@@ -122,9 +176,8 @@ add_executable(
 )
 target_include_directories(
   ethosu_execution_stats_test
-  PRIVATE
-    "${EXECUTORCH_ROOT}/.."
-    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+  PRIVATE "${EXECUTORCH_ROOT}/.."
+          "${ETHOS_SDK_PATH}/core_software/core_driver/include"
 )
 target_link_libraries(
   ethosu_execution_stats_test
@@ -142,9 +195,8 @@ add_executable(
 )
 target_include_directories(
   ethosu_pmu_callbacks_test
-  PRIVATE
-    "${EXECUTORCH_ROOT}/.."
-    "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+  PRIVATE "${EXECUTORCH_ROOT}/.."
+          "${ETHOS_SDK_PATH}/core_software/core_driver/include"
 )
 target_compile_definitions(
   ethosu_pmu_callbacks_test PRIVATE ET_EVENT_TRACER_ENABLED
@@ -217,10 +269,9 @@ if(EXISTS
     )
     target_include_directories(
       ${TARGET}
-      PUBLIC
-        "${EXECUTORCH_ROOT}/.."
-        "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_driver_stub"
-        "${EXECUTORCH_ROOT}/examples/arm/arm-scratch/ethos-u/core_software/core_driver/include"
+      PUBLIC "${EXECUTORCH_ROOT}/.."
+             "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_driver_stub"
+             "${ETHOS_SDK_PATH}/core_software/core_driver/include"
     )
     target_compile_definitions(
       ${TARGET} PUBLIC EXECUTORCH_BUILD_ARM_ETHOSU_LINUX=1 ${ARGN}
@@ -238,6 +289,8 @@ if(EXISTS
     ethosu_linux_execution_stats_test
     "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_execution_stats_test.cpp"
     "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_LinuxDriver.cpp"
+    "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUIOPlan.cpp"
+    "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
   )
   target_link_libraries(
     ethosu_linux_execution_stats_test PRIVATE GTest::gtest_main
@@ -254,6 +307,8 @@ if(EXISTS
       ethosu_linux_stats_${stats_mode}_test
       "${EXECUTORCH_ROOT}/backends/arm/test/ethosu_linux_optional_stats_test.cpp"
       "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_LinuxDriver.cpp"
+      "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUIOPlan.cpp"
+      "${EXECUTORCH_ROOT}/backends/arm/runtime/EthosUBackend_IoMemcpy.cpp"
     )
     target_include_directories(
       ethosu_linux_stats_${stats_mode}_test
@@ -286,3 +341,14 @@ else()
       "Skipping Linux PMU tests: set ETHOSU_LINUX_DRIVER_SOURCE_DIR to a driver checkout"
   )
 endif()
+
+add_test(
+  NAME ethosu_scratch_to_executorch
+  COMMAND "${_ethos_u_runtime_tests_dir}/test_ethosu_scratch_to_executorch.sh"
+          "${EXECUTORCH_ROOT}" "${_ethos_u_runtime_test_output_dir}"
+)
+set_tests_properties(
+  ethosu_scratch_to_executorch
+  PROPERTIES LABELS "arm;ethos-u;runtime;memory_allocation;fvp" RESOURCE_LOCK
+             arm_ethos_u_runtime
+)

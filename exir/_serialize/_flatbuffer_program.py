@@ -15,7 +15,17 @@ from contextvars import ContextVar
 from dataclasses import fields, is_dataclass
 from functools import lru_cache
 from types import ModuleType
-from typing import Any, Dict, get_args, get_origin, get_type_hints, Optional, Union
+from typing import (
+    Any,
+    Dict,
+    get_args,
+    get_origin,
+    get_type_hints,
+    List,
+    NamedTuple,
+    Optional,
+    Union,
+)
 
 import flatbuffers  # pyre-ignore[21]
 from executorch.exir._serialize._flatbuffer import (
@@ -31,8 +41,12 @@ from executorch.exir._serialize.generated.executorch_flatbuffer import (
     InstructionArguments as _InstructionArguments,
     KernelTypes as _KernelTypes,
 )
-from executorch.exir._serialize.generated.executorch_flatbuffer.Program import ProgramT
-from executorch.exir.schema import Double, EValue, Instruction, Program
+from executorch.exir._serialize.generated.executorch_flatbuffer.EValue import EValueT
+from executorch.exir._serialize.generated.executorch_flatbuffer.Program import (
+    Program as FlatbufferProgram,
+    ProgramT,
+)
+from executorch.exir.schema import Double, EValue, Instruction, KernelTypes, Program
 
 _T_CLASS_CACHE: Dict[type, type] = {}
 _FIELD_NAME_CACHE: Dict[type, tuple[tuple[str, str], ...]] = {}
@@ -319,6 +333,35 @@ def _convert_from_flatbuffer_dataclass(val: Any, dataclass_type: type) -> Any:
             getattr(val, dst_name), type_hints[src_name]
         )
     return dataclass_type(**result)
+
+
+class ProgramMethodIO(NamedTuple):
+    inputs: List[KernelTypes]
+    outputs: List[KernelTypes]
+
+
+def deserialize_program_method_io(program_data: bytes) -> Dict[str, ProgramMethodIO]:
+    """Read method I/O metadata without unpacking weights or delegate payloads."""
+    _patch_generated_flatbuffer_aliases()
+    flatbuffer_program = FlatbufferProgram.GetRootAs(program_data)
+    method_io = {}
+    for plan_index in range(flatbuffer_program.ExecutionPlanLength()):
+        plan = flatbuffer_program.ExecutionPlan(plan_index)
+        method_io[plan.Name().decode("utf-8")] = ProgramMethodIO(
+            inputs=[
+                _convert_from_flatbuffer_dataclass(
+                    EValueT.InitFromObj(plan.Values(plan.Inputs(index))), EValue
+                ).val
+                for index in range(plan.InputsLength())
+            ],
+            outputs=[
+                _convert_from_flatbuffer_dataclass(
+                    EValueT.InitFromObj(plan.Values(plan.Outputs(index))), EValue
+                ).val
+                for index in range(plan.OutputsLength())
+            ],
+        )
+    return method_io
 
 
 def _flatbuffer_to_program(program_data: bytes) -> Program:

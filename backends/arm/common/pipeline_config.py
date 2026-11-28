@@ -68,6 +68,9 @@ class ArmPassPipelineConfig:
         sdpa_safe_softmax_guard (SDPASafeSoftmaxGuardPolicy): SDPA
             safe-softmax guard policy.
 
+        large_stride_pool_padding (bool): Materialize static large-stride
+            max-pool padding. Enabled for the U85 compiler workaround.
+
     Example:
         compile_spec.set_pass_pipeline_config(
             ArmPassPipelineConfig(
@@ -89,6 +92,8 @@ class ArmPassPipelineConfig:
         SDPASafeSoftmaxGuardPolicy.PRESERVE
     )
 
+    large_stride_pool_padding: bool = False
+
     def is_default(self) -> bool:
         """Return true when all options are set to their defaults."""
         return (
@@ -96,6 +101,7 @@ class ArmPassPipelineConfig:
             and self.leaky_relu is LeakyReLULoweringConfig.DECOMPOSE
             and (self.sdpa_safe_softmax_guard is SDPASafeSoftmaxGuardPolicy.PRESERVE)
             and self.quantize_inf == QuantizeInfConfig()
+            and not self.large_stride_pool_padding
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -105,6 +111,8 @@ class ArmPassPipelineConfig:
             value = getattr(self, f.name)
             if is_dataclass(value):
                 data[f.name] = asdict(cast(Any, value))
+            elif isinstance(value, bool):
+                data[f.name] = value
             elif isinstance(value, Enum):
                 data[f.name] = value.name
             else:
@@ -122,6 +130,8 @@ class ArmPassPipelineConfig:
 
             if f.name == "quantize_inf":
                 config.quantize_inf = QuantizeInfConfig(**raw_value)
+            elif f.name == "large_stride_pool_padding":
+                config.large_stride_pool_padding = raw_value
             else:
                 # The field is an enum
                 enum_type = f.type

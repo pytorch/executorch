@@ -4,6 +4,11 @@ The `VgfPartitioner` controls what parts of a model is delegated to the Arm VGF 
 
 Pass `VgfCompileSpec(alias_buffer_mutations=True)` to delegate mutable KV-cache
 buffers as persistent VGF state. Eligible buffers must be zero-initialized,
-static-shape `int8` tensors whose reads and mutation stay in one partition.
+static-shape `int8` or `float32` tensors whose reads and mutation stay in one
+partition. Input and mutation output shapes, dtypes, and layouts must match.
+Pass `mutable_buffer_names` to select exact exported buffer names; other mutable
+buffers remain program-owned. Omitting it selects all mutable buffers, which
+must satisfy the eligibility checks.
+This aliases state within one delegate, not across methods or sessions.
 
 $PARTITIONER
