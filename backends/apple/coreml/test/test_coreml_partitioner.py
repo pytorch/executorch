@@ -25,6 +25,7 @@ from executorch.backends.apple.coreml.test.test_coreml_utils import (
     IS_VALID_TEST_RUNTIME,
 )
 from executorch.exir.backend.utils import format_delegated_graph
+from executorch.exir.lowered_backend_module import get_lowered_submodules
 from executorch.exir.passes.init_mutable_pass import InitializedMutableBufferPass
 
 
@@ -1808,6 +1809,156 @@ class TestCoreMLPartitioner(unittest.TestCase):
                         torch.allclose(out.float(), model(x).float(), atol=1e-2)
                     )
 
+    def test_integer_mm_with_constant_weight_falls_back_to_portable(self):
+        """
+        Regression test for https://github.com/pytorch/executorch/issues/11691.
+
+        coremltools 9.0 lowers an ``mm`` against a constant weight to
+        ``linear``, which only takes floating point inputs, so an int32 ``mm``
+        with a constant weight lowered fine but failed to load.  The
+        partitioner must leave it (and any constant-only op feeding its
+        weight) to the portable backend, while still delegating the rest of
+        the graph, integer ``mm`` of two runtime inputs, and fp32 / fp16
+        ``mm`` with a constant weight.
+        """
+
+        def int_mat():
+            return torch.randint(-5, 5, (8, 8), dtype=torch.int32)
+
+        class ConstWeight(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.w = int_mat()
+
+            def forward(self, x):
+                return torch.mm(torch.abs(x), self.w)
+
+        class TransposedBuffer(torch.nn.Module):
+            def __init__(self):
+                super().__init__()
+                self.register_buffer("w", int_mat())
+
+            def forward(self, x):
+                return torch.mm(torch.abs(x), self.w.t())
+
+        class TwoInputs(torch.nn.Module):
+            def forward(self, x, y):
+                return torch.mm(x, y)
+
+        class FloatWeight(torch.nn.Module):
+            def __init__(self, dtype):
+                super().__init__()
+                self.w = torch.nn.Parameter(torch.randn(8, 8, dtype=dtype))
+
+            def forward(self, x):
+                return torch.mm(x, self.w)
+
+        cases = [
+            (ConstWeight(), (int_mat(),), True),
+            (TransposedBuffer(), (int_mat(),), True),
+            (TwoInputs(), (int_mat(), int_mat()), False),
+            (FloatWeight(torch.float32), (torch.randn(8, 8),), False),
+            (
+                FloatWeight(torch.float16),
+                (torch.randn(8, 8, dtype=torch.float16),),
+                False,
+            ),
+        ]
+        for model, inputs, falls_back in cases:
+            model = model.eval()
+            ep = torch.export.export(model, inputs, strict=True)
+            compile_specs = None
+            if inputs[0].dtype == torch.float16:
+                # Core ML needs iOS16+ for fp16 inputs and outputs.
+                compile_specs = CoreMLBackend.generate_compile_specs(
+                    minimum_deployment_target=ct.target.iOS16
+                )
+            edge = executorch.exir.to_edge_transform_and_lower(
+                ep, partitioner=[CoreMLPartitioner(compile_specs=compile_specs)]
+            )
+            op_names = [
+                n.target.__name__
+                for n in edge.exported_program().graph.nodes
+                if n.op == "call_function"
+            ]
+            delegated_op_names = [
+                n.target.__name__
+                for _, lowered, _ in get_lowered_submodules(
+                    edge.exported_program().graph_module
+                )
+                for n in lowered.original_module.graph.nodes
+                if n.op == "call_function"
+            ]
+            # Every case keeps something delegated: either the mm itself, or
+            # the abs in front of an mm that falls back.
+            self.assertIn("executorch_call_delegate", op_names, model)
+            self.assertEqual("aten.mm.default" in op_names, falls_back, model)
+            self.assertEqual(
+                "aten.mm.default" in delegated_op_names, not falls_back, model
+            )
+            if _TEST_RUNTIME:
+                et_prog = edge.to_executorch()
+                program = Runtime.get().load_program(et_prog.buffer)
+                et_outputs = program.load_method("forward").execute(inputs)[0]
+                self.assertTrue(
+                    torch.allclose(
+                        et_outputs.float(),
+                        model(*inputs).float(),
+                        atol=1e-02,
+                        rtol=1e-02,
+                    ),
+                    model,
+                )
+
+    def test_integer_mm_weight_that_is_also_returned_leaves_no_empty_partition(
+        self,
+    ):
+        """
+        The transposed weight of an integer ``mm`` that falls back is also
+        returned.  Left delegated on its own, the transpose would be a Core ML
+        partition without inputs, which fails to lower below iOS 18 ("Deploying
+        a model with no inputs in CoreML requires you set
+        minimum_deployment_target to iOS18").  It must run outside of Core ML
+        with the ``mm``, whether or not anything else is delegated, and
+        returning the weight must not force a newer deployment target.
+        """
+
+        class Model(torch.nn.Module):
+            def __init__(self, delegate_something):
+                super().__init__()
+                self.register_buffer("w", torch.ones((8, 8), dtype=torch.int32))
+                self.delegate_something = delegate_something
+
+            def forward(self, x):
+                wt = self.w.t()
+                if self.delegate_something:
+                    x = torch.abs(x)
+                return torch.mm(x, wt), wt
+
+        x = torch.randint(-5, 5, (8, 8), dtype=torch.int32)
+        for delegate_something in (False, True):
+            with self.subTest(delegate_something=delegate_something):
+                model = Model(delegate_something).eval()
+                ep = torch.export.export(model, (x,), strict=True)
+                edge = executorch.exir.to_edge_transform_and_lower(
+                    ep, partitioner=[CoreMLPartitioner()]
+                )
+                op_names = [
+                    n.target.__name__
+                    for n in edge.exported_program().graph.nodes
+                    if n.op == "call_function"
+                ]
+                self.assertIn("aten.mm.default", op_names)
+                self.assertIn("aten.permute_copy.default", op_names)
+                self.assertEqual(
+                    "executorch_call_delegate" in op_names, delegate_something
+                )
+                if _TEST_RUNTIME:
+                    program = Runtime.get().load_program(edge.to_executorch().buffer)
+                    outputs = program.load_method("forward").execute((x,))
+                    for out, ref in zip(outputs, model(x)):
+                        self.assertTrue(torch.equal(out, ref))
+
     def test_tied_embedding_is_quantized_with_its_linear(self):
         """A weight that is both an embedding table and an output projection lowers.
 
@@ -1947,6 +2098,8 @@ if __name__ == "__main__":
     test_runner.test_take_over_constant_data_false()
     test_runner.test_aten_rand_default_falls_back_to_portable()
     test_runner.test_aten_randn_is_still_delegated()
+    test_runner.test_integer_mm_with_constant_weight_falls_back_to_portable()
+    test_runner.test_integer_mm_weight_that_is_also_returned_leaves_no_empty_partition()
     test_runner.test_tied_embedding_is_quantized_with_its_linear()
     test_runner.test_deprecation_warning_for_to_backend_workflow()
     test_runner.test_no_warning_for_to_edge_transform_and_lower_workflow()
