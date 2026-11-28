@@ -5671,7 +5671,20 @@ def _repeat_interleave_handler(P: MLXProgramBuilder, n: Node) -> Slot:
     require_kwargs(P.kwargs(n), {"output_size"}, "aten.repeat_interleave")
     x = args[0]
     repeats = args[1]
-    dim = args[2] if len(args) > 2 else 0
+    dim = args[2] if len(args) > 2 else None
+
+    if dim is None:
+        # Without dim, PyTorch repeats the elements of the flattened input.
+        _, flat_slot = P.make_tmp_slot()
+        P.emit(
+            ReshapeNode(
+                x=P.slot_to_tid(x),
+                out=P.slot_to_tid(flat_slot),
+                shape=[IntOrVid.from_literal(-1)],
+            )
+        )
+        x = flat_slot
+        dim = 0
 
     out = P.make_or_get_slot(n)
     P.emit(

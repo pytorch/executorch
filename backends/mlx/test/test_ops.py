@@ -8255,7 +8255,7 @@ class AllTest(OpTestCase):
 
 
 class RepeatInterleaveModel(nn.Module):
-    def __init__(self, repeats: int, dim: int):
+    def __init__(self, repeats: int, dim: Optional[int]):
         super().__init__()
         self.repeats = repeats
         self.dim = dim
@@ -8274,7 +8274,7 @@ class RepeatInterleaveTest(OpTestCase):
         self,
         shape: Tuple[int, ...] = (2, 3, 4),
         repeats: int = 2,
-        dim: int = 0,
+        dim: Optional[int] = 0,
     ):
         self.shape = shape
         self.repeats = repeats
@@ -8288,6 +8288,10 @@ class RepeatInterleaveTest(OpTestCase):
             cls(shape=(2, 4), repeats=3, dim=0),
             cls(shape=(2, 4), repeats=2, dim=1),
             cls(shape=(1, 8, 4, 16), repeats=4, dim=1),  # GQA-like pattern
+            # dim=None repeats the elements of the flattened input.
+            cls(shape=(6,), repeats=2, dim=None),
+            cls(shape=(2, 3), repeats=2, dim=None),
+            cls(shape=(2, 3, 4), repeats=3, dim=None),
         ]
 
     def create_model(self) -> nn.Module:
