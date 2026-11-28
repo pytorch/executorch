@@ -1086,7 +1086,7 @@ def _remove_invalid_ops_for_not_decompose(  # noqa: C901
                 )
                 return False
 
-            if native_schema.aliased_return_names() != [None]:
+            if any(name is not None for name in native_schema.aliased_return_names()):
                 log_warning(
                     f"Op {op} was requested for preservation by partitioner.  This request is ignored because it aliases output."
                 )
@@ -1203,7 +1203,13 @@ def _gen_edge_manager_for_partitioners(
                     ops_needing_preservation = []
 
                     for op in curr_ops_no_decomp:
-                        if table.pop(op, None) is not None:
+                        # A non-core ATen op also needs a verifier exemption
+                        # when it has no decomposition to remove.
+                        if table.pop(op, None) is not None or (
+                            op.namespace == "aten"
+                            and torch.Tag.core not in op.tags
+                            and torch.Tag.view_copy not in op.tags
+                        ):
                             ops_needing_preservation.append(op)
 
                     # The initial ``run_decompositions({})`` above has already

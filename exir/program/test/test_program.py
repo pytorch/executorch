@@ -12,6 +12,12 @@ from typing import Any, Dict
 
 import torch
 from executorch.exir import EdgeCompileConfig, ExecutorchBackendConfig
+from executorch.exir.backend.partitioner import (
+    DelegationSpec,
+    Partitioner,
+    PartitionResult,
+)
+from executorch.exir.backend.test.demo_backend import DemoBackend
 from executorch.exir.backend.test.op_partitioner_demo import (
     AddMulPartitionerDemo,
     NonDecompTestPartitioner,
@@ -843,6 +849,51 @@ class TestProgramManagers(unittest.TestCase):
                 num_call_delegates += 1
 
         self.assertEqual(num_call_delegates, num_non_decomposed_aten_ops)
+
+    def test_to_edge_transform_and_lower_preserves_requested_ops(self):
+        class PreserveOpPartitioner(Partitioner):
+            def __init__(self, op, check_op_support):
+                self.op = op
+                self.check_op_support = check_op_support
+                self.delegation_spec = DelegationSpec(DemoBackend.__name__, [])
+
+            def ops_to_not_decompose(self, ep):
+                return [self.op], self.check_op_support
+
+            def partition(self, ep):
+                for node in ep.graph.nodes:
+                    if node.op == "call_function":
+                        node.meta["delegation_tag"] = "tag0"
+                return PartitionResult(ep, {"tag0": self.delegation_spec})
+
+        inputs = (torch.tensor([[2.0, 1.0, 2.0]]),)
+        cases = (
+            (
+                WrapperModule(lambda x: torch.aminmax(x, dim=-1)),
+                torch.ops.aten.aminmax.default,
+                exir_ops.edge.aten.aminmax.default,
+                lambda node: node.target == torch.ops.aten.aminmax.default,
+            ),
+            (
+                WrapperModule(lambda x: torch.sort(x, stable=True)),
+                torch.ops.aten.sort.stable,
+                exir_ops.edge.aten.sort.stable,
+                None,
+            ),
+        )
+        for model, aten_op, edge_op, check_op_support in cases:
+            with self.subTest(op=aten_op):
+                edge = to_edge_transform_and_lower(
+                    export(model, inputs),
+                    partitioner=[PreserveOpPartitioner(aten_op, check_op_support)],
+                )
+                program = edge.exported_program()
+                [(_, delegate, _)] = get_lowered_submodules(program.graph_module)
+                self.assertIn(
+                    edge_op,
+                    [node.target for node in delegate.original_module.graph.nodes],
+                )
+                torch.testing.assert_close(program.module()(*inputs), model(*inputs))
 
     def test_to_edge_transform_and_lower(self):
         self._test_model_with_non_decomp_partitioner(TestLinear())
