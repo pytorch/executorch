@@ -527,7 +527,7 @@ static bool is_tensor_like_descriptor_type(VkDescriptorType descriptor_type) {
 
 static VkResult submit_and_wait_with_fence(
     VkDevice device,
-    VkQueue queue,
+    VgfRepr& repr,
     const VkSubmitInfo* submit_info) {
   VkFence fence = VK_NULL_HANDLE;
 
@@ -543,7 +543,7 @@ static VkResult submit_and_wait_with_fence(
     return result;
   }
 
-  result = vkQueueSubmit(queue, 1, submit_info, fence);
+  result = repr.submit_to_queue(submit_info, fence);
   if (result != VK_SUCCESS) {
     ET_LOG(Error, "Vulkan queue submit failed, error %d", result);
     vkDestroyFence(device, fence, nullptr);
@@ -1582,7 +1582,7 @@ static bool allocate_resource_sampler(
 VkResult transition_image_layout(
     VkDevice device,
     VkCommandPool command_pool,
-    VkQueue queue,
+    VgfRepr& repr,
     VkImage image,
     VkImageLayout old_layout,
     VkImageLayout new_layout) {
@@ -1680,7 +1680,7 @@ VkResult transition_image_layout(
 
   // creates a temporary one-time command buffer, submits it once, waits, and
   // frees it immediately.
-  result = submit_and_wait_with_fence(device, queue, &submit_info);
+  result = submit_and_wait_with_fence(device, repr, &submit_info);
 
   vkFreeCommandBuffers(device, command_pool, 1, &command_buffer);
   return result;
@@ -2895,7 +2895,7 @@ bool VgfRepr::process_vgf(
               result = transition_image_layout(
                   vk_device,
                   vk_command_pool,
-                  vk_queue,
+                  *this,
                   image,
                   VK_IMAGE_LAYOUT_UNDEFINED,
                   initial_layout);
@@ -3338,7 +3338,7 @@ bool VgfRepr::process_vgf(
               result = transition_image_layout(
                   vk_device,
                   vk_command_pool,
-                  vk_queue,
+                  *this,
                   image,
                   VK_IMAGE_LAYOUT_UNDEFINED,
                   initial_layout);
@@ -4734,7 +4734,7 @@ bool VgfRepr::release_execution_zero_copy_imports() {
   // reference imported EValue storage. execute_vgf() normally waits on its
   // fence, but a failed wait can leave a submission outstanding.
   if (execute_submission_pending_) {
-    const VkResult wait_result = vkQueueWaitIdle(vk_queue);
+    const VkResult wait_result = wait_for_queue_idle();
 
     // Device loss is terminal for this representation, but Vulkan permits its
     // child objects to be destroyed. free_vgf() synchronously ends every
@@ -5381,7 +5381,7 @@ bool VgfRepr::execute_vgf(executorch::runtime::EventTracer* event_tracer) {
 
     // Submit + fence wait only; reset is above.
     VGF_STATS_TIME(submit_wait_ns);
-    result = vkQueueSubmit(vk_queue, 1, &submit, vk_execute_fence);
+    result = submit_to_queue(&submit, vk_execute_fence);
     if (fused != nullptr) {
       fused->submit_result = result;
       fused->submitted = result == VK_SUCCESS;

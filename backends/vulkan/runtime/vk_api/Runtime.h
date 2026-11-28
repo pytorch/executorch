@@ -64,6 +64,8 @@ class Runtime final {
  private:
   RuntimeConfig config_;
 
+  // The version actually requested when creating the canonical instance.
+  uint32_t instance_api_version_;
   VkInstance instance_;
 
   std::vector<DeviceMapping> device_mappings_;
@@ -77,9 +79,13 @@ class Runtime final {
     return instance_;
   }
 
+  inline uint32_t instance_api_version() const {
+    return instance_api_version_;
+  }
+
   inline Adapter* get_adapter_p() {
     VK_CHECK_COND(
-        default_adapter_i_ >= 0 && default_adapter_i_ < adapters_.size(),
+        default_adapter_i_ < adapters_.size(),
         "Pytorch Vulkan Runtime: Default device adapter is not set correctly!");
     return adapters_[default_adapter_i_].get();
   }

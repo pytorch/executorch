@@ -18,13 +18,14 @@ using namespace std;
 using executorch::runtime::ArrayRef;
 using executorch::runtime::CompileSpec;
 
-// We use the platform and runtime environment provided by the Vulkan delegate
-#include <executorch/backends/vulkan/runtime/vk_api/vk_api.h>
+#include <volk.h>
 
 #include <executorch/backends/arm/runtime/VGFBoundaryIO.h>
 #include <executorch/backends/arm/runtime/VGFNeuralStatistics.h>
+#include <executorch/backends/arm/runtime/VGFSharedDevice.h>
 #include <executorch/backends/arm/runtime/VGFVulkanFeatures.h>
 #include <executorch/backends/arm/runtime/VGFZeroCopy.h>
+#include <utility>
 
 namespace executorch {
 namespace backends {
@@ -122,8 +123,10 @@ class VgfRepr {
       bool neural_statistics_requested = false,
       bool neural_statistics_device_enabled = false,
       int neural_statistics_mode_index = 1,
-      VgfHostMemoryImportCapabilities host_memory_import_capabilities = {})
-      : vk_instance(inst),
+      VgfHostMemoryImportCapabilities host_memory_import_capabilities = {},
+      std::shared_ptr<VgfSharedDeviceState> shared_device_state = {})
+      : shared_device_state_(std::move(shared_device_state)),
+        vk_instance(inst),
         vk_physical(phys),
         vk_device(dev),
         vk_queue(queue),
@@ -269,11 +272,52 @@ class VgfRepr {
   // tensor view; imported Vulkan objects are destroyed only after no queued
   // work can still use them. The next execute_vgf() re-records the command
   // buffer through the existing dirty-binding path.
+
+  bool uses_shared_device() const {
+    return static_cast<bool>(shared_device_state_);
+  }
+
+  // Call with VGFBackend::mutex_ held. Lock order is backend -> queue.
+  // Do not retain a raw shared queue or hold its mutex across fence waits,
+  // CPU copies, pipeline creation, or destruction of private resources.
+  VkResult submit_to_queue(const VkSubmitInfo* submit_info, VkFence fence)
+      const {
+    if (shared_device_state_) {
+      return shared_device_state_->device->with_locked_queue(
+          [&](VkQueue queue) {
+            return vkQueueSubmit(queue, 1, submit_info, fence);
+          });
+    }
+    return vkQueueSubmit(vk_queue, 1, submit_info, fence);
+  }
+
+  VkResult wait_for_queue_idle() const {
+    if (shared_device_state_) {
+      return shared_device_state_->device->with_locked_queue(
+          [](VkQueue queue) { return vkQueueWaitIdle(queue); });
+    }
+    return vkQueueWaitIdle(vk_queue);
+  }
+
+  // Caller holds the backend mutex; the shared queue mutex is acquired here.
+  VkResult wait_for_device_idle_locked() const {
+    if (vk_device == VK_NULL_HANDLE) {
+      return VK_SUCCESS;
+    }
+    // Unrelated queues on an externally owned device are not ours to drain.
+    const VkResult result = shared_device_state_ ? wait_for_queue_idle()
+                                                 : vkDeviceWaitIdle(vk_device);
+    ET_CHECK_MSG(
+        result == VK_SUCCESS || result == VK_ERROR_DEVICE_LOST,
+        "Cannot free VGF resources while completion is unknown");
+    return result;
+  }
+
   ~VgfRepr() {
+    wait_for_device_idle_locked();
     free_vgf();
     if (vk_pipeline_cache != VK_NULL_HANDLE) {
-      // The cache is private to this VgfRepr, so no other delegate instance can
-      // be accessing it while this object is being destroyed.
+      // This cache is private to the representation.
       vkDestroyPipelineCache(vk_device, vk_pipeline_cache, nullptr);
       vk_pipeline_cache = VK_NULL_HANDLE;
     }
@@ -282,6 +326,7 @@ class VgfRepr {
  private:
   // false after terminal cleanup; the DelegateHandle remains valid only
   // for destroy().
+  std::shared_ptr<VgfSharedDeviceState> shared_device_state_;
   bool execution_valid_ = true;
   // Basic Vulkan objects passed to us and re-used
   VkInstance vk_instance;

@@ -184,6 +184,7 @@ def define_common_targets():
             # Linking from a separate static library causes the linker to
             # drop the symbols when building a shared library.
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm_src",
+            "VGFSharedDevice.cpp",
         ],
         exported_headers = [
             "VGFBoundaryIO.h",
@@ -194,6 +195,7 @@ def define_common_targets():
             "VGFShapeUtils.h",
             "VGFVulkanFeatures.h",
             "VGFZeroCopy.h",
+            "VGFSharedDevice.h",
         ],
         platforms = CXX,
         # @lint-ignore BUCKLINT: Avoid `link_whole=True` (https://fburl.com/avoid-link-whole)
@@ -207,13 +209,23 @@ def define_common_targets():
             "-DUSE_VULKAN_WRAPPER",
             "-DUSE_VULKAN_VOLK",
         ],
-        preprocessor_flags = _vgf_zero_copy_flags(),
+        # The Buck target compiles the shared-device shim, but VGF/Vulkan
+        # mixed execution needs a coordinated Vulkan/Volk build. Keep
+        # this disabled until that path is explicitly integrated.
+        preprocessor_flags = _vgf_zero_copy_flags() + [
+            "-DEXECUTORCH_VGF_SHARED_DEVICE=0",
+        ],
         visibility = ["PUBLIC"],
+        # VGFSharedDevice.h is a public header that includes the shared
+        # runtime types; re-export the owner for Buck header checking.
+        exported_deps = [
+            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
+            "//executorch/backends/vulkan_shared:runtime",
+        ],
         deps = [
             "//executorch/runtime/backend:interface",
             "//executorch/runtime/core:core",
             "fbsource//third-party/pypi/ai-ml-sdk-vgf-library/0.11.0:vgf",
-            "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:volk_arm",
             "fbsource//third-party/vulkan-headers-1.4.343/v1.4.343/src:vulkan-headers",
         ],
     )

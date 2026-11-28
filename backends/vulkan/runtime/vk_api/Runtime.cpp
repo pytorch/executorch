@@ -1,6 +1,7 @@
 /*
  * Copyright (c) Meta Platforms, Inc. and affiliates.
  * All rights reserved.
+ * Copyright 2026 Arm Limited and/or its affiliates.
  *
  * This source code is licensed under the BSD-style license found in the
  * LICENSE file in the root directory of this source tree.
@@ -10,6 +11,7 @@
 
 #include <executorch/backends/vulkan/runtime/vk_api/Adapter.h>
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
@@ -81,7 +83,17 @@ void find_requested_layers_and_extensions(
   }
 }
 
-VkInstance create_instance(const RuntimeConfig& config) {
+VkInstance create_instance(
+    const RuntimeConfig& config,
+    uint32_t& instance_api_version) {
+  uint32_t loader_version = VK_API_VERSION_1_0;
+  const auto enumerate_instance_version =
+      reinterpret_cast<PFN_vkEnumerateInstanceVersion>(
+          vkGetInstanceProcAddr(VK_NULL_HANDLE, "vkEnumerateInstanceVersion"));
+  if (enumerate_instance_version != nullptr) {
+    VK_CHECK(enumerate_instance_version(&loader_version));
+  }
+  instance_api_version = std::min(loader_version, uint32_t{VK_API_VERSION_1_3});
   const VkApplicationInfo application_info{
       VK_STRUCTURE_TYPE_APPLICATION_INFO, // sType
       nullptr, // pNext
@@ -89,7 +101,7 @@ VkInstance create_instance(const RuntimeConfig& config) {
       0, // applicationVersion
       nullptr, // pEngineName
       0, // engineVersion
-      VK_API_VERSION_1_1, // apiVersion
+      instance_api_version, // Negotiated with the loader.
   };
 
   std::vector<const char*> enabled_layers;
@@ -348,7 +360,8 @@ std::unique_ptr<Runtime> init_global_vulkan_runtime(
 
 Runtime::Runtime(const RuntimeConfig config)
     : config_(config),
-      instance_(create_instance(config_)),
+      instance_api_version_(VK_API_VERSION_1_0),
+      instance_(create_instance(config_, instance_api_version_)),
       device_mappings_(create_physical_devices(instance_)),
       adapters_{},
       default_adapter_i_(UINT32_MAX),
