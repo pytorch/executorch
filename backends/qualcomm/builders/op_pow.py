@@ -8,10 +8,12 @@ from typing import Dict
 import executorch.backends.qualcomm.python.PyQnnManagerAdaptor as PyQnnManager
 
 import torch
+from executorch.backends.qualcomm.utils.constants import QCOM_QUANT_ATTRS
 
 from .node_visitor import NodeVisitor
 from .node_visitor_manager import register_node_visitor
 from .qnn_constants import OpElementWisePower, QNN_OP_PACKAGE_NAME_QTI_AISW
+from .utils import is_parameter
 
 
 # pow.Tensor_Scalar should fall in this visitor because LiftConstantScalarOperands pass
@@ -40,6 +42,22 @@ class PowTensorTensor(NodeVisitor):
         # tensor input
         input_node = self.get_node(node.args[0])
         input_tensor = self.get_tensor(input_node, node)
+        # Quantized ElementWisePower on HTP does not broadcast its first input:
+        # with a one-element constant base (e.g. pow.Scalar's base, lifted by
+        # LiftConstantScalarOperands) only the first output element is
+        # computed. Materialize such a base at the output shape. The guard has
+        # no backend check, so every quantized backend (e.g. LPAI) gets the
+        # expanded base. It gets its own wrapper key so other consumers of the
+        # same node keep the original.
+        base_wrapper_name = None
+        if (
+            is_parameter(input_node, self.edge_program)
+            and QCOM_QUANT_ATTRS in input_node.meta
+            and input_tensor.numel() == 1
+            and input_tensor.shape != out_tensor.shape
+        ):
+            input_tensor = input_tensor.expand(out_tensor.shape).contiguous()
+            base_wrapper_name = f"{node.name}_base"
 
         tensor_type = PyQnnManager.Qnn_TensorType_t.QNN_TENSOR_TYPE_NATIVE
 
@@ -49,6 +67,7 @@ class PowTensorTensor(NodeVisitor):
             input_tensor,
             tensor_type,
             nodes_to_wrappers,
+            node_name=base_wrapper_name,
         )
 
         # exp input
