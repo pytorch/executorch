@@ -5,8 +5,6 @@
 # This source code is licensed under the BSD-style license found in the
 # LICENSE file in the root directory of this source tree.
 
-# pyre-unsafe
-
 import argparse
 import os
 import re
@@ -15,6 +13,7 @@ from typing import Any, List
 
 import yaml
 from torchgen.code_template import CodeTemplate  # type: ignore[import-not-found]
+from torchgen.selective_build.operator import SelectiveBuildOperator
 
 
 selected_prim_ops_h_template_str = """#pragma once
@@ -47,32 +46,85 @@ def normalize_op_name(op_name: str) -> str:
     return normalized
 
 
-def read_prim_op_names_from_yaml(op_selection_yaml_path: str) -> List[str]:
+UNBOUNDED_SELECTION_MACRO = "EXECUTORCH_PRIM_OPS_SELECTION_UNBOUNDED"
+
+UNBOUNDED_SELECTION_GUARD = f"""#define {UNBOUNDED_SELECTION_MACRO}
+#if defined(EXECUTORCH_ENABLE_PRIM_OPS_SELECTIVE_BUILD)
+#error \\
+    "A dependency selects all operators or unenumerated operator overloads. List exact overloads or build the full primitive-operator registry instead."
+#endif"""
+
+
+def _load_selection(op_selection_yaml_path: str) -> dict:
+    """
+    Load a selected_operators.yaml.
+
+    An absent or malformed file is an error. Callers rely on the selection being
+    the operators this build chose, so "no file" and "chose nothing" must not
+    look alike.
+    """
+    if not os.path.isfile(op_selection_yaml_path):
+        raise FileNotFoundError(
+            f"selected operator yaml not found: {op_selection_yaml_path}"
+        )
+
     with open(op_selection_yaml_path, "r") as f:
-        selected_operators = yaml.safe_load(f) or {}
+        selected_operators = yaml.safe_load(f)
 
+    if selected_operators is None:
+        selected_operators = {}
+    if not isinstance(selected_operators, dict):
+        raise ValueError(
+            f"selected operator yaml is not a mapping: {op_selection_yaml_path}"
+        )
+    return selected_operators
+
+
+def read_prim_op_selection_from_yaml(
+    op_selection_yaml_path: str,
+) -> tuple[List[str], bool]:
+    """Read named operators and whether any required overloads are unenumerated."""
+    selected_operators = _load_selection(op_selection_yaml_path)
     prim_op_names = set()
-    operators = selected_operators.get("operators", {})
-    if operators:
-        prim_op_names.update(operators.keys())
+    unbounded = bool(selected_operators.get("include_all_operators"))
+    for op_name, metadata in (selected_operators.get("operators") or {}).items():
+        operator = SelectiveBuildOperator.from_yaml_dict(op_name, metadata)
+        if operator.include_all_overloads:
+            unbounded = True
+        else:
+            prim_op_names.add(op_name)
 
-    et_kernel_metadata = selected_operators.get("et_kernel_metadata", {})
-    if et_kernel_metadata:
-        prim_op_names.update(et_kernel_metadata.keys())
-
-    return sorted(prim_op_names)
+    prim_op_names.update((selected_operators.get("et_kernel_metadata") or {}).keys())
+    return sorted(prim_op_names), unbounded
 
 
-def write_selected_prim_ops(prim_op_names: List[str], output_dir: str) -> None:
+def selection_is_unbounded(op_selection_yaml_path: str) -> bool:
+    """Whether the selection omits required operator or overload names."""
+    return read_prim_op_selection_from_yaml(op_selection_yaml_path)[1]
+
+
+def read_prim_op_names_from_yaml(op_selection_yaml_path: str) -> List[str]:
+    """Read enumerated names; use the selection reader to also check completeness."""
+    return read_prim_op_selection_from_yaml(op_selection_yaml_path)[0]
+
+
+def write_selected_prim_ops(
+    prim_op_names: List[str], output_dir: str, *, unbounded_selection: bool = False
+) -> None:
     """
     Generate selected_prim_ops.h from a list of prim op names.
 
     Args:
         prim_op_names: List of prim op names like ["executorch_prim::et_view.default", "aten::sym_size.int"]
         output_dir: Directory where to write selected_prim_ops.h
+        unbounded_selection: Required operator overloads are not enumerated.
+            The header rejects its use as a selected set instead of claiming
+            that no primitive operators are needed.
     """
     # Generate #define statements for each op
     defines = []
+    if unbounded_selection:
+        defines.append(UNBOUNDED_SELECTION_GUARD)
     for op_name in prim_op_names:
         macro_name = normalize_op_name(op_name)
         defines.append(f"#define {macro_name}")
@@ -116,17 +168,23 @@ def main(argv: List[Any]) -> None:
         parser.error("one of --prim-op-names or --op-selection-yaml-path is required")
 
     prim_op_names: List[str] = []
+    unbounded = False
     if options.prim_op_names is not None:
         # Parse comma-separated prim op names
         prim_op_names.extend(
             name.strip() for name in options.prim_op_names.split(",") if name.strip()
         )
     if options.op_selection_yaml_path:
-        prim_op_names.extend(
-            read_prim_op_names_from_yaml(options.op_selection_yaml_path)
+        yaml_names, unbounded = read_prim_op_selection_from_yaml(
+            options.op_selection_yaml_path
         )
+        prim_op_names.extend(yaml_names)
 
-    write_selected_prim_ops(sorted(set(prim_op_names)), options.output_dir)
+    write_selected_prim_ops(
+        sorted(set(prim_op_names)),
+        options.output_dir,
+        unbounded_selection=unbounded,
+    )
 
 
 if __name__ == "__main__":

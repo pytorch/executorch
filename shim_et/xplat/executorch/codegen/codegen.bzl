@@ -176,9 +176,11 @@ def et_operator_library(
         ops_schema_yaml_target = None,
         server_generated_yaml_target = None,
         **kwargs):
-    # Check if we should extract prim ops from the operator lists
-    # Note that selective build for prim ops doesnt support model or ops_schema_yaml_target or server_generated_yaml_target
-    # TODO: Add support for selective build for prim ops with model or ops_schema_yaml_target or server_generated_yaml_target
+    # An explicit ops list is split here, so that the prim ops go to
+    # gen_selected_prim_ops and the rest to gen_oplist. Every other source of a
+    # selection -- a model, a schema yaml, a server-generated yaml -- keeps its
+    # operators whole and reports them through the selected_operators.yaml
+    # below, which the prim ops genrule also reads.
     should_extract_prim_ops = (ops or ops_dict) and not (model or ops_schema_yaml_target or server_generated_yaml_target or include_all_operators)
 
     if should_extract_prim_ops:
@@ -234,9 +236,17 @@ def et_operator_library(
                 "--include_all_operators",
             )
 
+    # The explicit ops list is only one of the ways a selection arrives: a model,
+    # a schema yaml or a server-generated yaml names its operators in the
+    # selected_operators.yaml this genrule just wrote, and never in prim_ops.
+    # Read both, so that a selection carrying a prim op reports it whichever way
+    # it was expressed. The yaml names every selected operator, not only the
+    # primitive ones; register_prim_ops.cpp consults the primitive macros alone,
+    # and over-approximating here can never drop one.
     prim_ops_genrule_cmd = [
         "$(exe //executorch/codegen/tools:gen_selected_prim_ops)",
         "--prim_op_names=" + ",".join(prim_ops),
+        "--op_selection_yaml_path=${OUT}/" + selected_operator_yaml_filename,
         "--output_dir=${OUT}",
     ]
 
@@ -901,9 +911,13 @@ def executorch_generated_lib(
             applied to the compiled registration library (`<name>`) but NOT to
             the header-only library (`<name>_headers`), so that host-side
             consumers such as unit tests can still depend on the headers.
-        include_all_prim_ops: If true, include all prim ops in the generated library. This option
-            allows for selecting only some prim ops to reduce code size for extremely constrained
-            environments. For selecting only some prim ops, see examples in //executorch/examples/selective_build
+        include_all_prim_ops: If true, register every prim op. If false, register exactly
+            the prim ops the deps' selected operator sets name, which may be none of them,
+            to reduce code size for extremely constrained environments. A dep that reports
+            no selection at all is an error rather than a fallback to registering them all.
+            For selecting only some prim ops, dependencies must enumerate exact operator
+            overloads; include_all_overloads selections require the full registry instead.
+            See examples in //executorch/examples/selective_build
     """
     _compat_kwargs = {}
     if compatible_with != None:

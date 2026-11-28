@@ -160,6 +160,18 @@ class TestGenOpList(unittest.TestCase):
             True,
         )
 
+    def test_gen_op_list_with_only_include_all_operators_records_the_flag(
+        self,
+    ) -> None:
+        output_path = os.path.join(self.temp_dir.name, "all_operators.yaml")
+        gen_oplist.main([f"--output_path={output_path}", "--include_all_operators"])
+
+        with open(output_path) as f:
+            written = yaml.safe_load(f)
+
+        self.assertTrue(written["include_all_operators"])
+        self.assertEqual(written["operators"], {})
+
     def test_get_custom_build_selector_with_both_allowlist_and_yaml(
         self,
     ) -> None:
